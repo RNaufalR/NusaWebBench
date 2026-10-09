@@ -33,11 +33,11 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-180 | Provider settings, usage, privacy controls        | VERIFIED | T-110, T-120, T-130, T-140                      |
 | T-190 | Security hardening dan threat-model verification  | VERIFIED | T-040 s.d. T-180                                |
 | T-200 | Low-resource behavior, reliability, cleanup       | EXECUTED | T-050, T-060, T-080, T-090, T-140, T-150, T-160 |
-| T-210 | Documentation and onboarding                      | PLANNED  | T-010 s.d. T-200                                |
-| T-220 | CI, release checks, artifact validation           | PLANNED  | seluruh task rilis                              |
-| T-230 | Final acceptance audit dan release handoff        | PLANNED  | T-000 s.d. T-220                                |
+| T-210 | Documentation and onboarding                      | EXECUTED | T-010 s.d. T-200                                |
+| T-220 | CI, release checks, artifact validation           | VERIFIED | seluruh task rilis                              |
+| T-230 | Final acceptance audit dan release handoff        | EXECUTED | T-000 s.d. T-220                                |
 
-Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED`: T-000 s.d. T-100 (11 task). Sisanya (T-110 s.d. T-230) `PLANNED`. Tidak ada task yang `EXECUTED` atau `BLOCKED` saat ini.
+Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED` (18): T-000 s.d. T-100, T-110, T-120, T-130, T-140, T-180, T-190, T-220. `EXECUTED` (6): T-150, T-160, T-170, T-200, T-210, T-230 (lihat alasan di bagian masing-masing). `PLANNED`: 0.
 
 ---
 
@@ -1088,6 +1088,74 @@ Acceptance:
 - Limitation tercatat di `SECURITY.md`.
 
 Catatan jujur: pengujian SSRF/redirect/IP privat secara ekstensif berada pada `packages/core/tests/scope.test.ts` (25 tes, dibuat di T-040). Tidak ada serangan baru yang dijalankan di luar fixture lokal.
+
+---
+
+---
+
+## T-210 — Documentation and onboarding
+
+ID: T-210
+Title: Documentation and onboarding
+Status: EXECUTED
+Depends on: T-010 sampai T-200
+
+Yang sudah dibuat dan diuji:
+
+- `README.md`: ikhtisar produk, batasan, prasyarat, instalasi, quality gates, dashboard, core tanpa AI, provider AI (opt-in), fixture dan ground truth, target remote, risiko k6, batasan Strix, perbandingan/remediasi, dan tautan dokumentasi. Setiap perintah yang tertulis sudah dijalankan dari clone bersih: `npm ci`, `npm run check`, `npm run build`, `npm run web` (health dan diagnostics merespons).
+- `.env.example`: nama variabel aman, default aman, dan opsional tanpa nilai rahasia (`CHROMIUM_PATH`, `K6_BIN`, `NWB_CHROME_NO_SANDBOX`, `ALLOWED_HOSTS`).
+- `SECURITY.md`: cakupan, pelaporan, prosedur uji aman, batasan, dan tabel ancaman → kendali → bukti.
+- `docs/decisions/`: ADR-0004 (kebijakan AI), ADR-0005 (dashboard loopback). ADR-0001 sampai 0003 sudah ada.
+- `IMPLEMENTATION_STATUS.md`: status per task dengan bukti.
+
+Belum terpenuhi:
+
+- Pemeriksaan tautan resmi belum dijalankan (sebagian tautan berada di luar allowlist sandbox).
+- Pemeriksaan "outdated model names" hanya untuk registry; README menyebut verifikasi ulang endpoint Gemini/Groq sebagai langkah wajib (R-AI-2).
+- README menyatakan Node 24 dengan peringatan EOL (R-NODE-1). Pin belum diganti.
+
+---
+
+## T-220 — CI, release checks, dan artifact validation
+
+ID: T-220
+Title: CI, release checks, dan artifact validation
+Status: VERIFIED
+Depends on: seluruh task rilis
+
+Bukti:
+
+- Workflow `.github/workflows/ci.yml` dengan dua job: `quality` (format, lint, typecheck, tes tanpa browser, secret scan, build, smoke dashboard dari `dist`) dan `browser-tests` (Chromium dari Playwright, `REQUIRE_BROWSER_TESTS=1`).
+- Run CI pada commit `08a828d`: `37884182132`, kedua job SUCCESS (`gh run view 37884182132`).
+- Clean install dari clone bersih: `npm ci` lulus setelah lockfile disinkronkan (`f65f68b`). Ini menangkap ketidaksinkronan lockfile yang nyata.
+- Tanpa API key: core tests lulus tanpa AI (job quality tanpa `CHROMIUM_PATH`). Skip ditampilkan sebagai "skipped" (35 tes) dan bukan dianggap lulus.
+- Tidak ada scan remote atau load test otomatis di CI: tidak ada target remote dan tidak ada k6/Strix di workflow.
+- Izin workflow: `permissions: contents: read` (tanpa write token). Tidak ada secret yang dirujuk. Tidak ada artifact upload.
+- Dependensi terkunci: `package-lock.json` dipakai oleh `npm ci`.
+
+Catatan jujur:
+
+- Job browser memakai `NWB_CHROME_NO_SANDBOX=1`. Runner Ubuntu terbaru membatasi user namespace sehingga sandbox Chrome dapat gagal. Ini opt-in khusus runner CI sementara (R-LH-1).
+- Reporter `github-actions` ditambahkan ke job browser untuk diagnosis. Anotasi kegagalan dapat dibaca lewat API GitHub.
+- Hasil artifact validation: schema laporan dan artefak dites di `packages/report/tests` dan `packages/storage/tests`.
+
+---
+
+## T-230 — Final acceptance audit dan release handoff
+
+ID: T-230
+Title: Final acceptance audit dan release handoff
+Status: EXECUTED
+Depends on: T-000 sampai T-220 (kecuali modul opsional yang ditunda)
+
+Hasil: `RELEASE_AUDIT.md` dibuat dengan checklist pass/fail/blocked, perintah, versi, bukti, batasan, dan risiko. Clean install, gerbang wajib, smoke dashboard, dan CI sudah diverifikasi.
+
+Alasan status EXECUTED (bukan VERIFIED):
+
+- Retention/cleanup dengan preview (T-200) belum diimplementasikan. Gerbang "retention behavior" berstatus FAIL.
+- T-150 (k6 nyata), T-160 (Strix nyata), dan T-170 (test setelah patch) belum VERIFIED. Modul opsional yang ditunda sudah ditampilkan sebagai DEFERRED/BLOCKED, tetapi T-170 bukan opsional menurut taskbook.
+- R-NODE-1 (Node 24 EOL) memerlukan keputusan pemilik proyek.
+- Tes live Gemini/Groq belum dijalankan (DEFERRED, opt-in).
 
 ---
 
