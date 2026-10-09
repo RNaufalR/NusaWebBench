@@ -23,6 +23,25 @@ export type RunStatus = (typeof RUN_STATUSES)[number];
 /** Status yang tidak dapat berubah lagi (terminal). */
 export const TERMINAL_RUN_STATUSES = ['CANCELLED', 'COMPLETED', 'PARTIAL', 'FAILED'] as const;
 
+/**
+ * Transisi status run yang diizinkan (taskbook §6.2). Satu-satunya sumber aturan transisi;
+ * storage dan orchestrator memakai tabel ini.
+ */
+export const ALLOWED_RUN_TRANSITIONS: Readonly<Record<RunStatus, readonly RunStatus[]>> =
+  Object.freeze({
+    QUEUED: ['RUNNING', 'CANCELLED', 'FAILED'],
+    RUNNING: ['CANCELLING', 'COMPLETED', 'PARTIAL', 'FAILED'],
+    CANCELLING: ['CANCELLED', 'FAILED'],
+    CANCELLED: [],
+    COMPLETED: [],
+    PARTIAL: [],
+    FAILED: [],
+  });
+
+export function isAllowedRunTransition(from: RunStatus, to: RunStatus): boolean {
+  return ALLOWED_RUN_TRANSITIONS[from].includes(to);
+}
+
 export const MODULE_STATUSES = [
   'QUEUED',
   'RUNNING',

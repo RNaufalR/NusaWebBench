@@ -50,6 +50,16 @@ export function safeText(max: number) {
     .refine((s) => !hasControlChars(s), { message: 'control-characters-not-allowed' });
 }
 
+/** Bentuk minimal schema yang dibutuhkan lapisan storage (tanpa mengekspor zod ke luar core). */
+export type SafeParser<T> = {
+  safeParse: (input: unknown) =>
+    | { success: true; data: T }
+    | {
+        success: false;
+        error: { issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }> };
+      };
+};
+
 export const IdSchema = z.string().regex(ID_PATTERN, { message: 'invalid-id-format' });
 /**
  * ISO 8601 UTC dengan tepat 3 digit milidetik dan akhiran Z (bentuk `Date#toISOString`).
@@ -435,3 +445,27 @@ export const RemediationProposalSchema = z
     }
   });
 export type RemediationProposal = z.infer<typeof RemediationProposalSchema>;
+
+// ---------- Target ----------
+
+/** Target yang terdaftar. Validasi scope lanjutan dilakukan oleh guard (T-040). */
+export const TargetSchema = z
+  .strictObject({
+    id: IdSchema,
+    label: safeText(100).min(1),
+    origin: OriginSchema,
+    mode: z.enum(TARGET_MODES),
+    allowedModules: z.array(z.enum(MODULE_NAMES)).max(MODULE_NAMES.length),
+    scopeConfirmedAt: IsoDateTimeSchema.nullable(),
+    createdAt: IsoDateTimeSchema,
+    updatedAt: IsoDateTimeSchema,
+  })
+  .superRefine((t, ctx) => {
+    if (new Set(t.allowedModules).size !== t.allowedModules.length) {
+      ctx.addIssue({ code: 'custom', path: ['allowedModules'], message: 'duplicate-module' });
+    }
+    if (t.updatedAt < t.createdAt) {
+      ctx.addIssue({ code: 'custom', path: ['updatedAt'], message: 'updated-before-created' });
+    }
+  });
+export type Target = z.infer<typeof TargetSchema>;

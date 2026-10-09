@@ -1,5 +1,5 @@
-import type { ZodType } from 'zod';
 import { AppError } from './errors.js';
+import type { SafeParser } from './schemas.js';
 import { newId, nowIso } from './ids.js';
 import {
   EvidenceSchema,
@@ -8,6 +8,8 @@ import {
   ProviderUsageSchema,
   RemediationProposalSchema,
   RunSchema,
+  TargetSchema,
+  type Target,
   type Evidence,
   type Finding,
   type ModuleResult,
@@ -20,7 +22,7 @@ import {
  * Mengubah hasil safeParse menjadi nilai tervalidasi atau AppError VALIDATION_FAILED.
  * Pesan error hanya memuat path dan kode issue, tidak pernah nilai input.
  */
-export function parseOrThrow<T>(schema: ZodType<T>, input: unknown, label: string): T {
+export function parseOrThrow<T>(schema: SafeParser<T>, input: unknown, label: string): T {
   const result = schema.safeParse(input);
   if (result.success) {
     return result.data;
@@ -110,5 +112,18 @@ export function createRemediationProposal(
     RemediationProposalSchema,
     { ...input, id: input.id ?? newId('remediation') },
     'RemediationProposal',
+  );
+}
+
+/** Factory: target baru. Nilai `scopeConfirmedAt` hanya diisi oleh guard setelah konfirmasi. */
+export function createTarget(
+  input: Omit<Target, 'id' | 'createdAt' | 'updatedAt'> & { now?: Date },
+): Target {
+  const { now, ...rest } = input;
+  const at = nowIso(now);
+  return parseOrThrow(
+    TargetSchema,
+    { ...rest, id: newId('target'), createdAt: at, updatedAt: at },
+    'Target',
   );
 }

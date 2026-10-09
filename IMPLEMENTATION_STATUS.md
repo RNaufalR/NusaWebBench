@@ -239,6 +239,78 @@ Known limitations:
 
 Next action: T-030 (SQLite storage, migration, repository).
 
+## T-030 — SQLite storage, migration, dan repository layer
+
+ID: T-030
+Title: SQLite storage, migration, dan repository layer
+Status: VERIFIED
+Depends on: T-020
+
+Keputusan: `node:sqlite` bawaan Node 24 (ADR-0003). Tidak ada dependency native.
+
+Files changed:
+
+- `packages/storage/package.json`, `packages/storage/tsconfig.build.json` — paket `@nusawebbench/storage` (depends on core).
+- `packages/storage/src/database.ts` — `openDatabase` (buat folder, PRAGMA aman, cek schema), `withTransaction` (BEGIN IMMEDIATE, rollback), `mapSqliteError` (UNIQUE→CONFLICT, FK/CHECK→VALIDATION_FAILED, lain→STORAGE_ERROR; pesan asli hanya di debugDetail yang diredaksi).
+- `packages/storage/src/migrations.ts` — migrasi v1 (targets, runs, run_transitions, module_results, findings, evidence, provider_usage, remediation_proposals, app_settings) dengan CHECK constraint dan foreign key; `migrate` idempotent, checksum SHA-256, menolak versi lebih baru dan checksum berubah, tiap migrasi dalam transaksi.
+- `packages/storage/src/repositories.ts` — TargetRepository, RunRepository (transisi compare-and-set + tabel transisi), ModuleResultRepository (UNIQUE per run, identitas tidak bisa diubah), FindingRepository (`insertIfNew` idempoten via sidik jari), EvidenceRepository, ProviderUsageRepository (`countRequests` per provider/hari), RemediationRepository, SettingsRepository.
+- `packages/storage/src/store.ts` — `Store.open(path)` menggabungkan koneksi, migrasi, dan repository.
+- `packages/storage/src/index.ts`; `packages/storage/tests/storage.test.ts` (38 tes).
+- `packages/core/src/constants.ts` — `ALLOWED_RUN_TRANSITIONS` (satu-satunya aturan transisi), `isAllowedRunTransition`.
+- `packages/core/src/schemas.ts` — `TargetSchema`, `SafeParser` (tipe struktural untuk lapisan storage).
+- `packages/core/src/factories.ts` — `createTarget`; `parseOrThrow` menerima `SafeParser` dan melempar VALIDATION_FAILED.
+- `vitest.config.ts` — alias ke `src` paket workspace agar tes tidak memakai `dist` lama (ditemukan saat pengujian: dist stale menyebabkan `createTarget is not a function`).
+- `docs/decisions/ADR-0003-sqlite-node-sqlite.md`.
+
+Acceptance criteria:
+
+- [x] CRUD repositories — tes insert/get/list/findByOrigin untuk target; insert/get/transition/list untuk run; insert/list/update untuk modul, temuan, evidence, usage, remediation, settings.
+- [x] Migration tests — DB kosong (apply v1, idempoten), checksum berubah ditolak, DB versi lebih baru ditolak, migrasi gagal di tengah rollback dan tidak tercatat, upgrade dari v1 ke v2 tanpa menyentuh data lama.
+- [x] Transaction rollback tests — `withTransaction` melempar error → insert di dalam transaksi tidak tersimpan (tes "rollback penuh").
+- [x] Restart persistence test — `Store.open` → tulis → close → buka ulang: run, settings, dan usage tetap ada.
+- [x] DB corruption/error handling — file bukan SQLite → STORAGE_ERROR tanpa path di pesan aman; folder tidak dapat ditulis → STORAGE_ERROR (dilewati bila berjalan sebagai root, dinyatakan di kode).
+- [x] Negative: path invalid (`folder` berupa file), artifact hilang (belum relevan — evidence hanya metadata, diuji di T-060), duplicate run ID (CONFLICT), failed transaction (rollback), disk write error (disimulasikan lewat folder read-only), DB path tidak writable.
+- [x] Query parameterization — tes "input berbahaya diperlakukan sebagai data": judul `'); DROP TABLE runs; --` tersimpan literal dan tabel runs tetap ada.
+- [x] Data tersimpan dimanipulasi → ditolak saat dibaca (STORAGE_ERROR), tidak diteruskan.
+- [x] Patch transisi tidak bisa mengubah identitas run (`targetId`, `id`) — ditambahkan setelah audit.
+- [x] Foreign key dan uniqueness: run dengan target tidak ada → VALIDATION_FAILED; origin target ganda → CONFLICT; modul ganda per run → CONFLICT.
+- [~] Artifact path verifikasi terhadap root artefak — belum diimplementasikan (tanggung jawab artifact store T-060); skema `RelativePathSchema` sudah menolak traversal.
+- [~] Retention/cleanup — belum diimplementasikan; dijadwalkan T-200 (cleanup dengan dry-run). Tidak ada penghapusan data di T-030.
+
+Commands actually run:
+
+- `npx vitest run` — PASS 115/115 (termasuk 38 tes storage). Sebelumnya: 13 gagal karena dist stale (diperbaiki dengan alias), 1 gagal karena ZodError terpetakan STORAGE_ERROR (diperbaiki: parseOrThrow → VALIDATION_FAILED), 1 gagal karena migrasi uji salah (ditulis ulang).
+- `npx tsc -p tsconfig.json --noEmit` — PASS.
+- `npm run lint` — PASS setelah menghapus non-null assertion dan `require()` di tes.
+
+Line-by-line audit:
+
+- `database.ts`, `migrations.ts`, `repositories.ts` dibaca. Temuan dan perbaikan:
+  1. `ZodError` mentah dipetakan menjadi STORAGE_ERROR → diganti `parseOrThrow` (VALIDATION_FAILED). Diuji.
+  2. Patch transisi bisa menimpa identitas saat runtime → hanya field yang diizinkan yang disalin. Diuji.
+  3. Migrasi v1 dijalankan `db.exec` di dalam `withTransaction` — DDL SQLite transaksional; diuji rollback.
+  4. `ModuleResultRepository.insert` sebelumnya memakai `startedAt` sebagai created_at (bisa null/epoch) → diganti waktu penyimpanan.
+  5. `countRequests` menjumlahkan `requestCount` dari JSON; status apa pun dihitung (dicatat sebagai aturan: request yang mungkin sudah terkirim tetap dihitung).
+- `store.ts`, `database.ts` (fungsi `describe`), `index.ts`: dibaca.
+- Catatan keamanan: `debugDetail` untuk error pembukaan file dapat memuat path lokal (diredaksi hanya untuk pola secret). Ini hanya untuk log internal, tidak pernah dikembalikan ke klien (`toSafeError`).
+
+Security review:
+
+- Semua query memakai parameter; nama tabel/kolom berasal dari kode.
+- Baris dari DB divalidasi ulang dengan schema domain.
+- Tidak ada penghapusan file di luar direktori aplikasi (storage tidak menyentuh filesystem selain file DB dan folder induknya).
+- Keterbatasan: pengecekan izin file DB bergantung pada OS; tidak ada enkripsi at-rest (di luar scope; data bersifat lokal).
+
+Evidence/artifacts: output `vitest`, `tsc`, dan `eslint` di atas.
+
+Known limitations:
+
+- Belum ada verifikasi path artefak terhadap root artefak (T-060).
+- Belum ada cleanup/retention (T-200).
+- Test "folder tidak dapat ditulis" dilewati bila berjalan sebagai root; di CI non-root ini dijalankan.
+
+Next action: T-040 (target registry dan scope guard).
+
 ## Risk register (awal)
 
 Lihat tabel R1–R8 pada bagian T-000. Register ini diperbarui pada setiap task.
