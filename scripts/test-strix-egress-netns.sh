@@ -40,6 +40,8 @@ S() { sudo "$@"; }
 
 declare -A CREATED_CHAIN=([iptables]=0 [ip6tables]=0)
 declare -A CREATED_JUMP=([iptables]=0 [ip6tables]=0)
+# Aturan ACCEPT khusus topologi uji (untuk policy FORWARD DROP), dicatat agar bisa dihapus.
+FWD_ADDED=()
 
 cleanup() {
   set +e
@@ -53,6 +55,10 @@ cleanup() {
       S "$fam" -F DOCKER-USER 2>/dev/null
       S "$fam" -X DOCKER-USER 2>/dev/null
     fi
+  done
+  for rule in "${FWD_ADDED[@]}"; do
+    # shellcheck disable=SC2086
+    S iptables -D FORWARD $rule 2>/dev/null
   done
   S ip netns del nwb-ctr 2>/dev/null
   S ip netns del nwb-ext 2>/dev/null
@@ -78,6 +84,21 @@ for fam in iptables ip6tables; do
 done
 S sysctl -qw net.ipv4.ip_forward=1
 
+# Policy FORWARD: runner GitHub dengan Docker biasanya DROP, sedangkan sandbox lokal ACCEPT.
+# Harness tidak boleh bergantung pada salah satunya. Aturan ACCEPT khusus topologi uji (nwbtest0 <->
+# nwbx-h) ditambahkan di AKHIR chain (-A). Lompatan DOCKER-USER ada di posisi 1 dan dievaluasi lebih
+# dulu, sehingga guard tetap memblokir. Aturan dihapus oleh cleanup.
+FWD_POLICY="$(S iptables -S FORWARD 2>/dev/null | grep -m1 '^-P FORWARD' || true)"
+echo "policy FORWARD host: ${FWD_POLICY:-tidak terbaca}"
+for rule in "-i $BRIDGE -o nwbx-h -j ACCEPT" "-i nwbx-h -o $BRIDGE -j ACCEPT"; do
+  # shellcheck disable=SC2086
+  if ! S iptables -C FORWARD $rule 2>/dev/null; then
+    # shellcheck disable=SC2086
+    S iptables -A FORWARD $rule
+    FWD_ADDED+=("$rule")
+  fi
+done
+
 # --- Topologi ---
 S ip netns add nwb-ctr
 S ip netns add nwb-ext
@@ -102,7 +123,6 @@ S ip netns exec nwb-ext ip link set nwbx-c up
 S ip netns exec nwb-ext ip link set lo up
 S ip netns exec nwb-ext ip route add default via 10.99.0.1
 # Container mencapai host eksternal lewat forwarding host (jalur yang harus diblokir guard).
-# Policy FORWARD host ini ACCEPT, sehingga forwarding kontrol tidak memerlukan aturan ACCEPT tambahan.
 # Aturan ACCEPT jangan disisipkan di atas DOCKER-USER: itu akan melewati guard (bug uji yang sudah diperbaiki).
 
 # --- Layanan ---

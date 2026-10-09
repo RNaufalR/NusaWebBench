@@ -67,7 +67,7 @@ Kategori tidak boleh saling diklaim. Tidak ada status FIXED final tanpa bukti ru
 - Unit dan integrasi loopback: `pinned-http.test.ts` (10 tes lama, tidak diubah) dan `pinned-http-hardening.test.ts` (17 tes baru: rebinding per hop, total timeout, pembatalan, batas redirect, variasi URL, server trickle). Total 27 lulus.
 - **Timeout total dibuktikan dengan server trickle** (mengirim byte pelan-pelan). Server diam tidak valid sebagai bukti, karena idle timeout ikut aktif dan menutupi timeout total.
 - **Kontrol negatif:** versi tanpa total deadline. Tes trickle gagal setelah 10005 ms. File dipulihkan dan dibandingkan dengan `cmp`.
-- **Runtime Chromium nyata:** `packages/browser-qa/tests/pin-runtime.test.ts` (3 tes, `REQUIRE_BROWSER_TESTS=1`) lulus. `MAP * ~NOTFOUND` juga memblokir IP literal `127.0.0.1` yang tidak dipin (`ERR_NAME_NOT_RESOLVED`). Ini fail-closed, dan tes disesuaikan terhadap perilaku ini.
+- **Runtime Chromium nyata:** `packages/browser-qa/tests/pin-runtime.test.ts` (3 tes, `REQUIRE_BROWSER_TESTS=1`) lulus. Tes ini sempat gagal di CI karena Chromium Playwright juga meminta `/favicon.ico` ke host yang dipin. Tes sekarang memeriksa dokumen `/` tepat satu kali dan Host asli untuk setiap request. Host lain dan IP literal tetap nol request. `MAP * ~NOTFOUND` juga memblokir IP literal `127.0.0.1` yang tidak dipin (`ERR_NAME_NOT_RESOLVED`). Ini fail-closed, dan tes disesuaikan terhadap perilaku ini.
 
 **Yang belum terbukti (BLOCKED):**
 
@@ -112,6 +112,7 @@ Kategori tidak boleh saling diklaim. Tidak ada status FIXED final tanpa bukti ru
 - Bukti sisi server: hitungan request di log layanan tidak bertambah pada layanan terlarang dan host eksternal setelah guard aktif.
 - Setelah run: namespace dan proses http.server bersih. Tidak ada sisa aturan `DOCKER-USER`.
 - Bug harness yang sudah diperbaiki: `ACCEPT` bridge yang disisipkan di atas lompatan `DOCKER-USER` melewati guard. Aturan itu sekarang dihapus, dan jangan disisipkan lagi di atas lompatan tersebut.
+- **Ketergantungan pada policy FORWARD (diperbaiki setelah CI gagal):** harness lama mengandalkan `-P FORWARD ACCEPT` sandbox. Runner GitHub dengan Docker biasanya `DROP`. Harness lama gagal pada fase kontrol dengan "host eksternal tidak terjangkau (topologi tidak valid)". Ini sudah direproduksi secara lokal dengan `iptables -P FORWARD DROP`. Harness sekarang mencatat policy FORWARD dan menambahkan ACCEPT khusus topologi uji (`nwbtest0` <-> `nwbx-h`) di akhir chain. Aturan ini dihapus oleh cleanup. Dengan policy DROP, harness baru lulus dan tidak meninggalkan sisa.
 - Pembungkus Vitest: `packages/security-strix/tests/egress-netns.test.ts` (aktif bila `NWB_NETNS_TESTS=1`, wajib bila `REQUIRE_NETNS_TESTS=1`).
 
 **Yang belum terbukti (BLOCKED):**
@@ -164,7 +165,8 @@ Semua angka di bawah berasal dari run pada kode final, dengan log di `/tmp/probe
 | `npm run lint` (`--max-warnings=0`)                                                                                              | exit 0. Sebelumnya 21 error (`no-non-null-assertion`, `prefer-const`, import tidak terpakai): diperbaiki |
 | `npm run typecheck`                                                                                                              | exit 0. Sebelumnya 1 error (`executablePath` bertipe `string \| undefined`): diperbaiki                  |
 | `npx prettier --check packages scripts .github`                                                                                  | All matched files use Prettier code style                                                                |
-| `npx vitest run` (default, tanpa env opt-in)                                                                                     | **629 lulus, 47 dilewati, 676 total**, exit 0. Tes yang dilewati adalah yang di-gate env (lihat bawah)   |
+| `CI=true npm run check` (format, lint, typecheck, tes, secret-scan)                                                              | **exit 0**. Tes 629 lulus, 47 dilewati, 676 total. `secret-scan` 0 temuan (170 berkas)                   |
+| Suite browser seperti job CI (`REQUIRE_BROWSER_TESTS=1 NWB_CHROME_NO_SANDBOX=1`, seluruh suite)                                  | **669 lulus, 7 dilewati**, exit 0 (Chromium lokal, bukan Playwright CI)                                  |
 | `CHROMIUM_PATH=… REQUIRE_BROWSER_TESTS=1 npx vitest run packages/browser-qa packages/lighthouse packages/core/tests/pinned-http` | **103 lulus**, 0 gagal, exit 0 (Chromium nyata)                                                          |
 | `NWB_NETNS_TESTS=1 REQUIRE_NETNS_TESTS=1 npx vitest run packages/security-strix`                                                 | **37 lulus, 1 dilewati** (`strix.real.optin`, opt-in dan tidak dijalankan), exit 0 (netns nyata, sudo)   |
 | `zizmor --offline .github/workflows/`                                                                                            | 0 temuan (statis)                                                                                        |
@@ -173,6 +175,20 @@ Semua angka di bawah berasal dari run pada kode final, dengan log di `/tmp/probe
 **Tes yang dilewati dan alasannya:** tes yang bergantung env (Chromium, netns, Strix nyata, live provider) dilewati pada run default. Jalankan dengan env opt-in untuk memverifikasinya. Strix nyata dan live provider **tidak dijalankan** dan tidak akan dijalankan tanpa persetujuan eksplisit per run.
 
 **Catatan jujur tentang F-05 dan F-06:** angka 27 dan 9 tes adalah jumlah tes yang ada. Lulusnya tes berarti kontrol bekerja pada cakupan tes itu, bukan bahwa seluruh jalur sudah aman.
+
+---
+
+### 3.1 Bukti CI pada commit `5347f6c` dan perbaikannya
+
+Commit `5347f6c` di-push ke `arena/48bd00ed-nusawebbench`. Run CI (push dan pull_request) **gagal**. Basis `9be88dd` lulus di CI. Log per job tidak bisa diunduh dari sandbox (`EOF` pada blob storage). Penyebab diambil dari anotasi check-run lewat API, dan dari reproduksi lokal.
+
+| Job (run 5347f6c)                          | Penyebab yang terbukti                                                                                                                    | Perbaikan                                                                                                                | Verifikasi ulang lokal                                   |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| Quality gates                              | `secret-scan` 3 temuan pada `redact-canary.test.ts` (baris canary `password` dan `secret` tertulis utuh)                                  | Canary dibangun saat runtime dari potongan, sesuai konvensi `tests/unit/secret-scan.test.ts`. Scanner tidak dilonggarkan | `CI=true npm run check` exit 0. secret-scan 0            |
+| Tes browser (Chromium Playwright)          | `pin-runtime.test.ts:60` `expected 2 to be 1`: Chromium juga meminta `/favicon.ico` ke host yang dipin                                    | Tes memeriksa dokumen `/` tepat satu kali dan Host asli untuk setiap request. Host lain tetap nol request                | Suite browser seperti CI lulus. pin-runtime 3/3 (3 kali) |
+| Strix integration, job `provision` (netns) | Lihat F-10: harness bergantung pada policy FORWARD ACCEPT. Runner Docker biasanya DROP. Reproduksi lokal menghasilkan kegagalan yang sama | Aturan ACCEPT khusus topologi uji di akhir chain, dihapus oleh cleanup                                                   | Netns lulus pada policy ACCEPT dan DROP. Tidak ada sisa  |
+
+Catatan: penyebab netns di runner adalah dugaan kuat yang direproduksi, bukan log CI. Konfirmasi final dilakukan dengan run CI berikutnya. Job `strix-live` tetap tidak berjalan (tidak ada dispatch).
 
 ---
 
