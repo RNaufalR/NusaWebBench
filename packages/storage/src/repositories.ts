@@ -404,6 +404,18 @@ export class EvidenceRepository {
     return row ? parseStored(EvidenceSchema, row['data_json'], 'evidence', id) : null;
   }
 
+  /** Evidence yang dibuat sebelum batas waktu (untuk retention). Dibatasi jumlahnya. */
+  listCreatedBefore(isoCutoff: string, limit: number): Evidence[] {
+    const rows = this.db
+      .prepare(
+        'SELECT id, data_json FROM evidence WHERE created_at < ? ORDER BY created_at, id LIMIT ?',
+      )
+      .all(isoCutoff, Math.max(1, Math.min(limit, 1000))) as Row[];
+    return rows.map((r) =>
+      parseStored(EvidenceSchema, r['data_json'], 'evidence', String(r['id'])),
+    );
+  }
+
   listByRun(runId: string): Evidence[] {
     const rows = this.db
       .prepare('SELECT id, data_json FROM evidence WHERE run_id = ? ORDER BY created_at, id')

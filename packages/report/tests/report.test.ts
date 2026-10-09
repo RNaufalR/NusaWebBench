@@ -186,6 +186,35 @@ describe('buildReport — schema versioned dan round-trip', () => {
   });
 });
 
+describe('laporan untuk run yang dibatalkan (negative T-200)', () => {
+  it('run CANCELLED dengan modul CANCELLED menghasilkan laporan valid, tanpa PASS palsu', () => {
+    const cancelledRun: Run = {
+      ...run,
+      status: 'CANCELLED',
+      completedAt: '2026-10-09T02:00:05.000Z',
+    };
+    const report = buildReport({
+      run: cancelledRun,
+      moduleResults: [
+        moduleResult({
+          status: 'CANCELLED',
+          metrics: {},
+          errorCode: 'CANCELLED',
+          completedAt: '2026-10-09T02:00:05.000Z',
+          durationMs: null,
+        }),
+      ],
+      findings: [],
+      evidence: [],
+      generatedAt: new Date('2026-10-09T02:05:00.000Z'),
+      synthetic: true,
+    });
+    expect(ReportSchema.parse(JSON.parse(JSON.stringify(report)))).toEqual(report);
+    expect(report.run.status).toBe('CANCELLED');
+    expect(report.modules.every((m) => m.status !== 'PASS')).toBe(true);
+  });
+});
+
 describe('render HTML', () => {
   it('HTML injection pada judul, deskripsi, dan URL di-escape', () => {
     const malicious = finding({

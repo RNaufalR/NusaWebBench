@@ -9,6 +9,9 @@ import {
   findingKey,
   isSafeRelativePath,
   proposePatch,
+  buildProposalRecord,
+  runChecksAtBase,
+  runPostPatchChecks,
   urlRemediationGuidance,
   type ComparableFinding,
   type RunSnapshot,
@@ -204,5 +207,208 @@ describe('proposal patch lewat git worktree (repo git sementara)', () => {
     await proposal.rollback();
     expect(existsSync(proposal.worktreePath)).toBe(false);
     expect(g(repo, ['worktree', 'list'])).not.toContain('nwb-wt-');
+  });
+});
+
+describe('tes setelah patch dan skenario negatif (T-170)', () => {
+  let repo: string;
+  let head: string;
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'uji',
+    GIT_AUTHOR_EMAIL: 'uji@example.invalid',
+    GIT_COMMITTER_NAME: 'uji',
+    GIT_COMMITTER_EMAIL: 'uji@example.invalid',
+  };
+  const g = (cwd: string, args: string[]) =>
+    execFileSync('git', args, { cwd, env, encoding: 'utf8' });
+  const NODE = process.execPath;
+
+  beforeEach(() => {
+    repo = mkdtempSync(path.join(tmpdir(), 'nwb-chk-'));
+    g(repo, ['init', '-q']);
+    mkdirSync(path.join(repo, 'src'), { recursive: true });
+    writeFileSync(path.join(repo, 'src', 'a.txt'), 'satu\n');
+    g(repo, ['add', '.']);
+    g(repo, ['commit', '-q', '-m', 'awal']);
+    head = g(repo, ['rev-parse', 'HEAD']).trim();
+  });
+  afterEach(() => rmSync(repo, { recursive: true, force: true }));
+
+  it('semua cek lulus → PASSED; keluaran tercatat', async () => {
+    const proposal = await proposePatch({
+      repoPath: repo,
+      baseRevision: head,
+      files: [{ path: 'src/a.txt', content: 'dua\n' }],
+    });
+    const report = await runPostPatchChecks(proposal, [
+      { id: 'cek-ok', argv: [NODE, '-e', 'console.log("ok")'], timeoutMs: 20_000 },
+    ]);
+    expect(report.verdict).toBe('PASSED');
+    expect(report.results[0]).toMatchObject({ id: 'cek-ok', status: 'PASSED', exitCode: 0 });
+    expect(report.results[0]?.outputTail).toContain('ok');
+    await proposal.rollback();
+  });
+
+  it('tes gagal setelah patch → NOT_VERIFIED (bukan PASSED)', async () => {
+    const proposal = await proposePatch({
+      repoPath: repo,
+      baseRevision: head,
+      files: [{ path: 'src/a.txt', content: 'dua\n' }],
+    });
+    const report = await runPostPatchChecks(proposal, [
+      { id: 'cek-gagal', argv: [NODE, '-e', 'process.exit(3)'], timeoutMs: 20_000 },
+    ]);
+    expect(report.verdict).toBe('NOT_VERIFIED');
+    expect(report.results[0]).toMatchObject({ status: 'FAILED', exitCode: 3 });
+    await proposal.rollback();
+  });
+
+  it('cek melebihi timeout dibunuh → TIMEOUT dan proses tidak tertinggal', async () => {
+    const proposal = await proposePatch({
+      repoPath: repo,
+      baseRevision: head,
+      files: [{ path: 'src/a.txt', content: 'dua\n' }],
+    });
+    const report = await runPostPatchChecks(proposal, [
+      {
+        id: 'cek-lambat',
+        argv: [NODE, '-e', 'setTimeout(() => {}, 30000)'],
+        timeoutMs: 300,
+      },
+    ]);
+    expect(report.verdict).toBe('NOT_VERIFIED');
+    expect(report.results[0]?.status).toBe('TIMEOUT');
+    await proposal.rollback();
+  });
+
+  it('executable tidak ada → ERROR, bukan PASSED', async () => {
+    const proposal = await proposePatch({
+      repoPath: repo,
+      baseRevision: head,
+      files: [{ path: 'src/a.txt', content: 'dua\n' }],
+    });
+    const report = await runPostPatchChecks(proposal, [
+      { id: 'alat-hilang', argv: ['nwb-tidak-ada-xyz'], timeoutMs: 5_000 },
+    ]);
+    expect(report.verdict).toBe('NOT_VERIFIED');
+    expect(report.results[0]?.status).toBe('ERROR');
+    await proposal.rollback();
+  });
+
+  it('definisi cek tidak valid (id, timeout, argv kosong) ditolak sebelum berjalan', async () => {
+    const proposal = await proposePatch({
+      repoPath: repo,
+      baseRevision: head,
+      files: [{ path: 'src/a.txt', content: 'dua\n' }],
+    });
+    const bad = [
+      { id: 'Bad Id', argv: [NODE], timeoutMs: 1000 },
+      { id: 'ok', argv: [NODE], timeoutMs: 0 },
+      { id: 'ok2', argv: [NODE], timeoutMs: 1e12 },
+      { id: 'ok3', argv: [], timeoutMs: 1000 },
+      { id: 'ok4', argv: [NODE, 'a\u0000b'], timeoutMs: 1000 },
+    ];
+    for (const c of bad) {
+      await expect(runPostPatchChecks(proposal, [c])).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+      });
+    }
+    await expect(runPostPatchChecks(proposal, [])).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
+    await proposal.rollback();
+  });
+
+  it('penulisan patch sebagian gagal → TOOL_FAILED dan worktree dibuang (repo tidak berubah)', async () => {
+    const before = g(repo, ['worktree', 'list']);
+    // File pertama valid; file kedua mencoba masuk ke bawah berkas biasa (ENOTDIR).
+    await expect(
+      proposePatch({
+        repoPath: repo,
+        baseRevision: head,
+        files: [
+          { path: 'src/b.txt', content: 'baru\n' },
+          { path: 'src/a.txt/anak.txt', content: 'x\n' },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'TOOL_FAILED' });
+    expect(g(repo, ['worktree', 'list'])).toBe(before);
+    expect(g(repo, ['status', '--porcelain']).trim()).toBe('');
+  });
+
+  it('Git tidak tersedia → TOOL_FAILED tanpa menyentuh repo', async () => {
+    const savedPath = process.env['PATH'];
+    process.env['PATH'] = '';
+    try {
+      await expect(
+        proposePatch({
+          repoPath: repo,
+          baseRevision: head,
+          files: [{ path: 'src/a.txt', content: 'x\n' }],
+        }),
+      ).rejects.toMatchObject({ code: 'TOOL_FAILED' });
+    } finally {
+      process.env['PATH'] = savedPath;
+    }
+    expect(readFileSync(path.join(repo, 'src', 'a.txt'), 'utf8')).toBe('satu\n');
+  });
+});
+
+describe('baseline sebelum patch dan record proposal (T-170)', () => {
+  let repo: string;
+  let head: string;
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'uji',
+    GIT_AUTHOR_EMAIL: 'uji@example.invalid',
+    GIT_COMMITTER_NAME: 'uji',
+    GIT_COMMITTER_EMAIL: 'uji@example.invalid',
+  };
+  const g = (cwd: string, args: string[]) =>
+    execFileSync('git', args, { cwd, env, encoding: 'utf8' });
+  const NODE = process.execPath;
+
+  beforeEach(() => {
+    repo = mkdtempSync(path.join(tmpdir(), 'nwb-rec-'));
+    g(repo, ['init', '-q']);
+    writeFileSync(path.join(repo, 'a.txt'), 'satu\n');
+    g(repo, ['add', '.']);
+    g(repo, ['commit', '-q', '-m', 'awal']);
+    head = g(repo, ['rev-parse', 'HEAD']).trim();
+  });
+  afterEach(() => rmSync(repo, { recursive: true, force: true }));
+
+  it('baseline dijalankan di worktree sementara dan worktree dibuang', async () => {
+    const before = g(repo, ['worktree', 'list']);
+    const report = await runChecksAtBase(repo, head, [
+      { id: 'base', argv: [NODE, '-e', 'process.exit(0)'], timeoutMs: 20_000 },
+    ]);
+    expect(report.verdict).toBe('PASSED');
+    expect(g(repo, ['worktree', 'list'])).toBe(before);
+  });
+
+  it('record proposal mencatat base, diff, tes sebelum/sesudah, dan approval PENDING', async () => {
+    const proposal = await proposePatch({
+      repoPath: repo,
+      baseRevision: head,
+      files: [{ path: 'a.txt', content: 'dua\n' }],
+    });
+    const after = await runPostPatchChecks(proposal, [
+      { id: 'after', argv: [NODE, '-e', 'process.exit(0)'], timeoutMs: 20_000 },
+    ]);
+    const record = buildProposalRecord({ proposal, testsBefore: null, testsAfter: after });
+    expect(record).toMatchObject({
+      baseRevision: head,
+      initialWorkingTreeClean: true,
+      changedFiles: ['a.txt'],
+      approval: 'PENDING',
+      applied: false,
+      testsBefore: null,
+    });
+    expect(record.diffSha256).toMatch(/^[0-9a-f]{64}$/);
+    // Belum ada persetujuan: repo pengguna tetap tidak berubah.
+    expect(readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('satu\n');
+    await proposal.rollback();
   });
 });

@@ -3,3 +3,4 @@ export * from './migrations.js';
 export * from './repositories.js';
 export * from './store.js';
 export * from './artifacts.js';
+export * from './retention.js';
