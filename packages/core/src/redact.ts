@@ -31,7 +31,9 @@ const SENSITIVE_NAME =
 
 /** Email dan nomor identitas 16 digit (format NIK Indonesia dan sejenisnya). */
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const LONG_DIGITS = /(?<!\d)\d{16}(?!\d)/g;
+// Nomor panjang hanya bila berdiri sendiri. Tanpa batas huruf, 16 digit di dalam ID hex acak
+// (mis. run_<32 hex>) ikut tersensor dan membuat laporan gagal secara acak (~0,2% per ID).
+const LONG_DIGITS = /(?<![A-Za-z0-9])\d{16}(?![A-Za-z0-9])/g;
 
 /**
  * Meredaksi teks bebas: nilai secret berbentuk tetap, header sensitif, pasangan

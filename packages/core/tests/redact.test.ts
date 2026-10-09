@@ -86,3 +86,19 @@ describe('containsKnownSecret', () => {
     expect(containsKnownSecret('tidak ada rahasia')).toBe(false);
   });
 });
+
+describe('redaksi tidak merusak ID acak (regresi: laporan gagal ~0,2% per ID)', () => {
+  it('ID bentuk run_/module_/evd_ dengan 32 hex acak tidak pernah berubah oleh redactText', async () => {
+    const { randomUUID } = await import('node:crypto');
+    const { redactText } = await import('../src/redact.js');
+    for (let i = 0; i < 40_000; i++) {
+      const id = `run_${randomUUID().replaceAll('-', '')}`;
+      expect(redactText(id)).toBe(id);
+    }
+  });
+
+  it('nomor kartu berdiri sendiri tetap disensor', async () => {
+    const { redactText } = await import('../src/redact.js');
+    expect(redactText('kartu 4111111111111111 terdaftar')).not.toContain('4111111111111111');
+  });
+});

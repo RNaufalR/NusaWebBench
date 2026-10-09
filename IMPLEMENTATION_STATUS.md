@@ -1139,7 +1139,7 @@ Risiko tambahan (T-040 s.d. T-080):
 
 - R-NODE-1 — `.nvmrc` dan `engines` memakai Node 24. Menurut nodejs.org (diperiksa 2026-10-09), Node 24 LTS mencapai akhir dukungan pada 2026-09-07 dan Node 26 adalah rilis Current. Memperbarui pin mengubah seluruh toolchain (Playwright, tes, native `node:sqlite`) sehingga perlu verifikasi ulang penuh. Status: terbuka, perlu keputusan pemilik proyek (ADR-0002 perlu direvisi).
 
-- R-TEST-1 — Tes `packages/report` "tidak ada script atau handler inline dalam HTML" gagal sekali dengan `AppError: Data yang dikirim tidak valid` pada suite penuh paralel (1 dari 5 run penuh di clone bersih; tidak terulang dalam 3 run penuh dan 8 run terisolasi). Penyebab belum diketahui; `debugDetail` tidak tertangkap. Mitigasi: tidak ada. Status: terbuka, perlu investigasi lanjutan sebelum rilis.
+- R-TEST-1 — (DITUTUP) Kegagalan intermiten `buildReport` ("Data yang dikirim tidak valid"). Akar masalah: pola redaksi `LONG_DIGITS` (16 digit berurutan) menyensor bagian ID hex acak; ~0,19% ID terpengaruh (diukur 500.000 sampel), sehingga laporan gagal secara acak. Ini bug produk, bukan hanya tes. Diperbaiki di `packages/core/src/redact.ts` (batas huruf/digit) dengan tes regresi 40.000 ID acak di `packages/core/tests/redact.test.ts`. Status: ditutup, bukti: CI job quality/browser.
 
 - R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal satu kali saat paket web dijalankan paralel; tidak terulang dalam 6 run berikutnya. Penyebab belum diketahui. Status: terbuka (flaky, dipantau).
 
