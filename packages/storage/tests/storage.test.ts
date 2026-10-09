@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AppError,
   createFinding,
@@ -376,6 +376,46 @@ describe('module, finding, evidence, usage, remediation', () => {
     store.modules.insert(module);
     return { target, run, module };
   }
+
+  it('urutan hasil modul mengikuti urutan penyisipan walau created_at sama (tidak acak)', () => {
+    const target = makeTarget();
+    store.targets.insert(target);
+    const run = makeRun(target.id);
+    store.runs.insert(run);
+    const order = ['FUNCTIONAL_QA', 'UX_RULES', 'LIGHTHOUSE', 'SECURITY_STRIX', 'LOAD_K6'] as const;
+    // Bekukan Date agar semua created_at identik; urutan harus tetap dari rowid, bukan dari id acak.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-09T02:00:00.000Z'));
+    try {
+      for (const m of order) {
+        store.modules.insert(
+          createModuleResult({
+            runId: run.id,
+            module: m,
+            status: 'SKIPPED',
+            startedAt: null,
+            completedAt: T2,
+            durationMs: null,
+            toolName: null,
+            toolVersion: null,
+            configSnapshot: {},
+            metrics: {},
+            findingIds: [],
+            artifactRefs: [],
+            errorCode: null,
+            errorMessageSafe: null,
+            retryCount: 0,
+            skippedReason: 'uji-urutan',
+          }),
+        );
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+    for (let i = 0; i < 3; i++) {
+      expect(store.modules.listByRun(run.id).map((r) => r.module)).toEqual([...order]);
+    }
+  });
 
   it('satu hasil per modul per run (UNIQUE) dan identitas modul tidak bisa diubah', () => {
     const { run, module } = setupRun();

@@ -1268,6 +1268,8 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-RET-1 — Retensi hanya library (belum ada UI/CLI). Berkas `.tmp-*` yatim akibat crash keras belum dibersihkan. Status: terbuka.
 - R-PATCH-1 — Tes setelah patch dan approval hanya di level library. Belum ada UI dan belum ada alur persetujuan yang tersimpan. Status: terbuka.
 
+- R-TEST-3 (DITUTUP) — Urutan hasil modul tidak deterministik: `module_results` diurutkan `created_at, id` dengan `id` acak (UUID), sehingga dua hasil dengan `created_at` yang sama (milidetik) bisa tertukar. Gagal sekali pada CI browser job run `37893146541` (commit `7ae0513`): `expected ['FAIL','PASS'] to equal ['PASS','FAIL']` di `orchestrator.test.ts:242`. Perbaikan: urutan `created_at, rowid` (urutan penyisipan) untuk `module_results`, `findings`, dan `evidence`. Regresi: `storage.test.ts` "urutan hasil modul ... tidak acak" (gagal 3/3 dengan kode lama, lulus dengan perbaikan). Bukti: `packages/orchestrator` dan `packages/storage` lulus 5 kali berulang. Status: ditutup.
+
 - R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal satu kali saat paket web dijalankan paralel; tidak terulang dalam 6 run berikutnya. Penyebab belum diketahui. Status: terbuka (flaky, dipantau).
 
 ## Log task lainnya

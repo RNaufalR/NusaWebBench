@@ -94,6 +94,7 @@
 - False positive secret-scan pada referensi properti. Diperbaiki (literal rahasia tetap terdeteksi).
 - Penulisan patch sebagian gagal tidak dipetakan ke error terstruktur. Sekarang TOOL_FAILED dengan rollback (`91df536`).
 - Kebocoran direktori sementara pada `storage.test.ts`. Sekarang dibersihkan (`afterEach`).
+- Urutan hasil modul tidak deterministik (`ORDER BY created_at, id` dengan id acak). Gagal sekali di CI browser job (run `37893146541`). Diperbaiki dengan urutan `rowid` dan tes regresi (R-TEST-3).
 
 ## Lampiran: perubahan sesi lanjutan (2026-10-09)
 

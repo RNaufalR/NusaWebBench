@@ -256,7 +256,9 @@ export class RunRepository {
 
   private modulesFor(runId: string): ModuleResult[] {
     const rows = this.db
-      .prepare('SELECT id, data_json FROM module_results WHERE run_id = ? ORDER BY created_at, id')
+      .prepare(
+        'SELECT id, data_json FROM module_results WHERE run_id = ? ORDER BY created_at, rowid',
+      )
       .all(runId) as Row[];
     return rows.map((r) =>
       parseStored(ModuleResultSchema, r['data_json'], 'module', String(r['id'])),
@@ -299,7 +301,9 @@ export class ModuleResultRepository {
 
   listByRun(runId: string): ModuleResult[] {
     const rows = this.db
-      .prepare('SELECT id, data_json FROM module_results WHERE run_id = ? ORDER BY created_at, id')
+      .prepare(
+        'SELECT id, data_json FROM module_results WHERE run_id = ? ORDER BY created_at, rowid',
+      )
       .all(runId) as Row[];
     return rows.map((r) =>
       parseStored(ModuleResultSchema, r['data_json'], 'module', String(r['id'])),
@@ -361,7 +365,7 @@ export class FindingRepository {
     );
     const rows = this.db
       .prepare(
-        'SELECT id, data_json FROM findings WHERE run_id = ? ORDER BY created_at, id LIMIT ? OFFSET ?',
+        'SELECT id, data_json FROM findings WHERE run_id = ? ORDER BY created_at, rowid LIMIT ? OFFSET ?',
       )
       .all(runId, limit, offset) as Row[];
     return {
@@ -408,7 +412,7 @@ export class EvidenceRepository {
   listCreatedBefore(isoCutoff: string, limit: number): Evidence[] {
     const rows = this.db
       .prepare(
-        'SELECT id, data_json FROM evidence WHERE created_at < ? ORDER BY created_at, id LIMIT ?',
+        'SELECT id, data_json FROM evidence WHERE created_at < ? ORDER BY created_at, rowid LIMIT ?',
       )
       .all(isoCutoff, Math.max(1, Math.min(limit, 1000))) as Row[];
     return rows.map((r) =>
@@ -418,7 +422,7 @@ export class EvidenceRepository {
 
   listByRun(runId: string): Evidence[] {
     const rows = this.db
-      .prepare('SELECT id, data_json FROM evidence WHERE run_id = ? ORDER BY created_at, id')
+      .prepare('SELECT id, data_json FROM evidence WHERE run_id = ? ORDER BY created_at, rowid')
       .all(runId) as Row[];
     return rows.map((r) =>
       parseStored(EvidenceSchema, r['data_json'], 'evidence', String(r['id'])),
