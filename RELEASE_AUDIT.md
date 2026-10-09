@@ -2,10 +2,10 @@
 
 - Tanggal audit: 2026-10-09 (Asia/Jakarta)
 - Branch: `arena/48bd00ed-nusawebbench`
-- Commit yang diaudit: `91df536` (clean clone dan uji gerbang). Perubahan dokumentasi setelahnya dicatat di bagian Lampiran.
+- Commit yang diaudit: `62e3a44` (clean clone dan uji gerbang). Riwayat perubahan sesi ini ada di bagian Lampiran.
 - Node untuk clean clone: v24.21.0 (`.nvmrc`). Sumber: paket npm `node-linux-x64@24.21.0`, tarball resmi Node. Sandbox sesi ini awalnya memakai Node v22.22.3 untuk pemasangan awal; hasil di sini diambil dari Node 24.
 - Chromium untuk tes lokal: Chromium 153 (`@sparticuz/chromium` di luar repo, `/tmp/chromium`). Tes CI memakai Chromium dari Playwright.
-- Bukti CI sebelumnya: run `37884382808` pada `ff315dd` (job quality dan browser keduanya success). Run untuk `91df536` belum ada pada saat audit ini ditulis.
+- Bukti CI: run `37893511343` pada `62e3a44` (job quality dan browser keduanya success). Run sebelumnya `37893146541` pada `7ae0513` gagal di browser job karena flake urutan (R-TEST-3, sudah diperbaiki).
 
 ## Keputusan rilis
 
@@ -17,22 +17,22 @@
 
 ## Checklist gerbang
 
-| #   | Gerbang                                           | Perintah                                                             | Hasil                                                             | Bukti                                |
-| --- | ------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------ |
-| 1   | Clean install dari clone baru (Node 24.21.0)      | `git clone` → `npm ci`                                               | PASS (exit 0)                                                     | sandbox, 2026-10-09                  |
-| 2   | Format                                            | `npm run format:check`                                               | PASS                                                              | `npm run check` pada clean clone     |
-| 3   | Lint (`--max-warnings=0`)                         | `npm run lint`                                                       | PASS                                                              | `npm run check` pada clean clone     |
-| 4   | Typecheck                                         | `npm run typecheck`                                                  | PASS                                                              | `npm run check` pada clean clone     |
-| 5   | Unit, integrasi, dan e2e fixture (tanpa browser)  | `npx vitest run` tanpa `CHROMIUM_PATH`                               | PASS: 496 lulus, 35 dilewati                                      | sandbox (sebelum commit dokumentasi) |
-| 6   | Unit, integrasi, dan e2e fixture (dengan browser) | `CHROMIUM_PATH=… REQUIRE_BROWSER_TESTS=1 NWB_CHROME_NO_SANDBOX=1`    | PASS: 529 lulus, 2 dilewati (k6 nyata dan live AI, opt-in)        | clean clone Node 24.21.0             |
-| 7   | Secret scan (file yang di-track)                  | `npm run secret-scan`                                                | PASS: findings=0 (scanned=146)                                    | clean clone                          |
-| 8   | Build semua paket                                 | `npm run build`                                                      | PASS (exit 0)                                                     | clean clone                          |
-| 9   | Smoke dashboard (loopback)                        | `node packages/web/dist/main.js` → `/api/health`, `/api/diagnostics` | PASS: `{"ok":true}`; diagnostik tanpa telemetri; Host asing → 403 | clean clone                          |
-| 10  | Audit dependensi produksi                         | `npm audit --omit=dev`                                               | PASS: 0 kerentanan                                                | sandbox                              |
-| 11  | Lisensi dependensi produksi                       | inspeksi `package.json` (120 paket)                                  | Dicatat: MPL-2.0 1 (`axe-core`, tanpa modifikasi)                 | SECURITY.md                          |
-| 12  | Scope guard dipakai semua adapter jaringan        | `grep checkUrlInScope/createRouteGuard`                              | PASS                                                              | T-190                                |
-| 13  | Tidak ada innerHTML/SQL interpolasi/shell di kode | grep + tes                                                           | PASS                                                              | T-190                                |
-| 14  | Core tanpa API key / Docker / jaringan            | default `.env.example`                                               | PASS (tes e2e fixture berjalan dengan AI off)                     | `api.test.ts` e2e                    |
+| #   | Gerbang                                           | Perintah                                                             | Hasil                                                             | Bukti                               |
+| --- | ------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
+| 1   | Clean install dari clone baru (Node 24.21.0)      | `git clone` → `npm ci`                                               | PASS (exit 0)                                                     | sandbox, 2026-10-09                 |
+| 2   | Format                                            | `npm run format:check`                                               | PASS                                                              | `npm run check` pada clean clone    |
+| 3   | Lint (`--max-warnings=0`)                         | `npm run lint`                                                       | PASS                                                              | `npm run check` pada clean clone    |
+| 4   | Typecheck                                         | `npm run typecheck`                                                  | PASS                                                              | `npm run check` pada clean clone    |
+| 5   | Unit, integrasi, dan e2e fixture (tanpa browser)  | `npx vitest run` tanpa `CHROMIUM_PATH`                               | PASS: 497 lulus, 35 dilewati                                      | clean clone `62e3a44`, Node 24.21.0 |
+| 6   | Unit, integrasi, dan e2e fixture (dengan browser) | `CHROMIUM_PATH=… REQUIRE_BROWSER_TESTS=1 NWB_CHROME_NO_SANDBOX=1`    | PASS: 530 lulus, 2 dilewati (k6 nyata dan live AI, opt-in)        | clean clone Node 24.21.0            |
+| 7   | Secret scan (file yang di-track)                  | `npm run secret-scan`                                                | PASS: findings=0 (scanned=146)                                    | clean clone                         |
+| 8   | Build semua paket                                 | `npm run build`                                                      | PASS (exit 0)                                                     | clean clone                         |
+| 9   | Smoke dashboard (loopback)                        | `node packages/web/dist/main.js` → `/api/health`, `/api/diagnostics` | PASS: `{"ok":true}`; diagnostik tanpa telemetri; Host asing → 403 | clean clone                         |
+| 10  | Audit dependensi produksi                         | `npm audit --omit=dev`                                               | PASS: 0 kerentanan                                                | sandbox                             |
+| 11  | Lisensi dependensi produksi                       | inspeksi `package.json` (120 paket)                                  | Dicatat: MPL-2.0 1 (`axe-core`, tanpa modifikasi)                 | SECURITY.md                         |
+| 12  | Scope guard dipakai semua adapter jaringan        | `grep checkUrlInScope/createRouteGuard`                              | PASS                                                              | T-190                               |
+| 13  | Tidak ada innerHTML/SQL interpolasi/shell di kode | grep + tes                                                           | PASS                                                              | T-190                               |
+| 14  | Core tanpa API key / Docker / jaringan            | default `.env.example`                                               | PASS (tes e2e fixture berjalan dengan AI off)                     | `api.test.ts` e2e                   |
 
 ## Skenario yang diwajibkan (taskbook §12 T-230 item 5)
 
@@ -99,7 +99,8 @@
 ## Lampiran: perubahan sesi lanjutan (2026-10-09)
 
 - `91df536`: tes setelah patch (`runPostPatchChecks`), baseline (`runChecksAtBase`), record proposal (`buildProposalRecord`), retensi (`previewRetention`/`applyRetention`), `listCreatedBefore`, dan tes negatif baru.
-- Setelah `91df536` (belum dicommit saat audit ditulis, lihat riwayat git): refactor `runChecksIn`, pembersihan temp di `storage.test.ts`, dan pembaruan dokumentasi (README, IMPLEMENTATION_STATUS, RELEASE_AUDIT).
+- `7ae0513`: refactor `runChecksIn`, pembersihan temp di `storage.test.ts`, dan pembaruan dokumentasi (README, IMPLEMENTATION_STATUS, RELEASE_AUDIT).
+- `62e3a44`: urutan deterministik (`created_at, rowid`) untuk module_results, findings, dan evidence, dengan tes regresi. Perbaikan flake CI.
 
 ## Langkah berikutnya yang disarankan
 
