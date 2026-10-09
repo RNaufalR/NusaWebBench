@@ -20,6 +20,7 @@ import {
   sendError,
   sendJson,
   sendStatic,
+  SECURITY_HEADERS,
 } from './http.js';
 
 export const MODULE_LABELS: Readonly<Partial<Record<ModuleName, string>>> = Object.freeze({
@@ -158,6 +159,12 @@ export function createApp(deps: WebDeps) {
       if (path === '/') return void sendStatic(res, 'text/html; charset=utf-8', INDEX_HTML);
       if (path === '/app.js') return void sendStatic(res, 'text/javascript; charset=utf-8', APP_JS);
       if (path === '/app.css') return void sendStatic(res, 'text/css; charset=utf-8', APP_CSS);
+      // Chrome meminta favicon otomatis; tanpa ikon, respons 404 tercatat sebagai error konsol.
+      if (path === '/favicon.ico') {
+        res.writeHead(204, SECURITY_HEADERS);
+        res.end();
+        return;
+      }
     }
 
     const route = matchRoute(method, path);

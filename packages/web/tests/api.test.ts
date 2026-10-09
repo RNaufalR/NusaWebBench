@@ -188,6 +188,10 @@ describe('keamanan dasar HTTP', () => {
     expect(r.status).toBe(413);
   });
 
+  it('favicon.ico dijawab 204 (tanpa error konsol di browser)', async () => {
+    expect((await call('GET', '/favicon.ico')).status).toBe(204);
+  });
+
   it('metode tak dikenal → 405; rute tak dikenal → 404', async () => {
     expect((await call('PATCH', '/api/targets')).status).toBe(405);
     expect((await call('GET', '/api/tidak-ada')).status).toBe(404);

@@ -8,6 +8,7 @@ export const INDEX_HTML = `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>NusaWebBench — dashboard lokal</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/app.css" />
     <script src="/app.js" defer></script>
   </head>

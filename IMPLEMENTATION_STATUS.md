@@ -1141,6 +1141,8 @@ Risiko tambahan (T-040 s.d. T-080):
 
 - R-TEST-1 — Tes `packages/report` "tidak ada script atau handler inline dalam HTML" gagal sekali dengan `AppError: Data yang dikirim tidak valid` pada suite penuh paralel (1 dari 5 run penuh di clone bersih; tidak terulang dalam 3 run penuh dan 8 run terisolasi). Penyebab belum diketahui; `debugDetail` tidak tertangkap. Mitigasi: tidak ada. Status: terbuka, perlu investigasi lanjutan sebelum rilis.
 
+- R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal satu kali saat paket web dijalankan paralel; tidak terulang dalam 6 run berikutnya. Penyebab belum diketahui. Status: terbuka (flaky, dipantau).
+
 ## Log task lainnya
 
 Lihat bagian per task di atas.
