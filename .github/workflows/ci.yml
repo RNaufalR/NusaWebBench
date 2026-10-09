@@ -78,4 +78,4 @@ jobs:
           test -x "$CHROMIUM_PATH"
           echo "CHROMIUM_PATH=$CHROMIUM_PATH" >> "$GITHUB_ENV"
       - name: Run full test suite with browser tests
-        run: npx vitest run
+        run: npx vitest run --reporter=verbose --reporter=github-actions
