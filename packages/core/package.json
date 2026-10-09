@@ -1,0 +1,27 @@
+{
+  "name": "@nusawebbench/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Domain contracts, schemas, error taxonomy, redaction, and config for NusaWebBench.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  }
+}

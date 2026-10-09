@@ -175,6 +175,69 @@ Known limitations:
 
 Next action: T-020 (domain schemas, error taxonomy, config schema).
 
+## T-020 — Domain schemas dan error taxonomy
+
+ID: T-020
+Title: Domain schemas dan error taxonomy
+Status: VERIFIED
+Depends on: T-010
+
+Files changed:
+
+- `packages/core/package.json`, `packages/core/tsconfig.build.json` — paket workspace `@nusawebbench/core` (kondisi export `source` untuk tes, `dist` untuk runtime). Dependensi: `zod@4.6.5` (dipin).
+- `packages/core/src/constants.ts` — satu-satunya sumber enum: status run/modul, severity, verification, source, kategori, provider, mode target, task AI, status usage, status remediation, jenis evidence, MIME allowlist, taksonomi error (`ERROR_CODES`, `AI_ERROR_CODES`).
+- `packages/core/src/schemas.ts` — schema runtime `strictObject` untuk Run, ModuleResult, Finding, Evidence, ProviderUsage, RemediationProposal, serta primitif (origin kanonis, URL aman, path relatif anti-traversal, SHA-256, timestamp ISO UTC milidetik).
+- `packages/core/src/errors.ts` — `AppError` (pesan aman terpisah dari `debugDetail`), `ERROR_CATALOG` (HTTP status + pesan aman), `toSafeError` (error tak dikenal → INTERNAL).
+- `packages/core/src/redact.ts` — `redactText`, `redactUrl`, `containsKnownSecret` (redaksi header, pasangan nama-nilai sensitif, key provider, email, NIK 16 digit, PEM).
+- `packages/core/src/config.ts` — `loadConfig` (validasi env saat startup, default §2.3, variabel kosong = default), `configSnapshot` (secret tidak pernah masuk, hanya flag `*_CONFIGURED`). Bind non-loopback butuh `ALLOW_EXTERNAL_BIND=true` (tambahan keselamatan di luar §2.3).
+- `packages/core/src/factories.ts` — `createRun`, `createModuleResult`, `createFinding`, `createEvidence`, `createProviderUsage`, `createRemediationProposal`; `parseOrThrow` hanya melaporkan path dan kode issue, tidak nilai input.
+- `packages/core/src/ids.ts` — ID `<prefix>_<32 hex>` dan `nowIso`.
+- `packages/core/src/index.ts`, `packages/core/tests/*.test.ts` (6 file, 91 tes), `packages/core/tests/fixtures.ts` (data sintetis).
+- `tsconfig.json`, `vitest.config.ts`, `package.json` (workspace `packages/*`, script `build`) — diperbarui.
+- `package-lock.json` — diperbarui.
+
+Acceptance criteria:
+
+- [x] Schema valid/invalid lengkap — 91 tes PASS (`npx vitest run`): valid untuk setiap entitas; invalid untuk property hilang, field tambahan, enum salah, confidence di luar 0..1 + NaN/Infinity, timestamp salah format, urutan waktu, run terminal tanpa completedAt, string terlalu panjang, karakter kontrol, metrik pada status non-hasil, PASS dengan errorCode, SKIPPED tanpa alasan, CONFIRMED tanpa evidence, CONFIRMED dari AI, rule tanpa versi, artifact reference buruk, provider di luar daftar, VERIFIED remediation dengan tes gagal/regresi.
+- [x] Tidak ada `any` di `packages/core/src` (grep). Trust boundary (env, input) memakai `unknown` + schema.
+- [x] Semua adapter dapat mengembalikan status jelas — enum status modul mencakup SKIPPED/UNAVAILABLE/ERROR/NOT_RUN/CANCELLED.
+- [x] UNAVAILABLE tidak berubah menjadi PASS — dijaga schema: status non-hasil wajib alasan, PASS tidak boleh membawa errorCode; tes "menolak PASS yang membawa errorCode" dan "menerima status non-hasil dengan alasan".
+- [x] Negative tests: property hilang, extra fields, enum tidak valid, confidence di luar range, timestamp salah, payload terlalu panjang, invalid artifact reference (`evidenceRefs: ['../../etc/passwd']`).
+- [x] Pesan error user-safe terpisah dari debug internal (`AppError.safeMessage` vs `debugDetail`; tes "pesan aman tidak mengandung detail debug").
+- [x] Strategi schema version: `SCHEMA_VERSION = 1`, `z.literal(1)` pada Run/Finding. Kebijakan migrasi report lama didefinisikan di T-060 (belum ada report sebelumnya).
+
+Commands actually run:
+
+- `npx vitest run` — PASS: 91/91 (6 file). Putaran awal: 1 gagal (origin trailing slash) → kontrak diperketat dan tes diperbaiki; sekali lagi PASS.
+- `npx tsc -p tsconfig.json --noEmit` — PASS (exit 0) setelah memperbaiki TS2307 (zod belum terpasang di workspace), TS7006, TS4111.
+- `npm run lint` — PASS setelah memperbaiki `no-control-regex` (diganti pemeriksaan kode karakter).
+- `npm run build` — PASS: `packages/core/dist/*.js` dibuat; `node -e` memanggil `loadConfig`, `newId`, `redactText` dari dist → berfungsi.
+- `npm install --save-exact zod@4.6.5 --workspace @nusawebbench/core` — PASS (sempat gagal karena pemasangan awal `-w` tidak menyimpan dependensi; diulang dengan nama workspace).
+
+Line-by-line audit:
+
+- `schemas.ts` dibaca penuh. Temuan: (1) perbandingan string timestamp salah bila presisi berbeda → dipaksa `precision: 3`, diuji; (2) origin menerima trailing slash → diperketat ke bentuk `URL.origin` persis, diuji; (3) nama helper `ModuleResultRefs` dipakai untuk findingIds → diganti `IdListSchema`; (4) variabel `times` tak terpakai → dihapus.
+- `config.ts` dibaca penuh. Temuan: (1) `z.coerce` mengubah `''` menjadi 0 (PORT kosong lolos sebagai ditolak secara membingungkan; boolean kosong gagal) → `emptyToUndefined`, diuji; (2) akses bracket untuk key bertanda `_CONFIGURED` (TS4111) → diperbaiki.
+- `redact.ts`, `errors.ts`, `factories.ts`, `constants.ts`, `ids.ts` dibaca; tes negatif untuk redaksi (header, PEM, URL userinfo, query sensitif) dan error (stack/path tidak bocor) ditambahkan.
+- Tes (`tests/*.ts`): dibaca dan diperbaiki (ekspektasi origin yang ambigu ditulis ulang sebagai daftar eksplisit).
+- Grep `any|TODO|FIXME|console|eval` pada `packages/core/src` dan `scripts/` → tidak ada temuan selain output CLI scanner yang disengaja.
+
+Security review:
+
+- Input dari luar (env, body) divalidasi schema; path relatif menolak traversal, absolut, backslash, NUL; URL menolak non-HTTP(S) dan userinfo.
+- Konfigurasi: secret tidak pernah dimasukkan ke pesan error atau snapshot (diuji dengan canary sintetis).
+- Redaksi diuji dengan canary sintetis. Keterbatasan: pola regex hanya menangkap bentuk yang dikenal.
+
+Evidence/artifacts: output `vitest` dan `tsc` di atas; tes di `packages/core/tests/`.
+
+Known limitations:
+
+- `redactText` bukan pengganti audit privasi; nama field non-standar dapat terlewat.
+- Schema belum mengenal target (`Target`) — ditambahkan di T-040.
+- `FREE_TIER_LOCK=false` diizinkan di env (dengan `AI_PROVIDER=none`); pemblokiran perubahan lock via UI/API dijadwalkan di T-180.
+
+Next action: T-030 (SQLite storage, migration, repository).
+
 ## Risk register (awal)
 
 Lihat tabel R1–R8 pada bagian T-000. Register ini diperbarui pada setiap task.

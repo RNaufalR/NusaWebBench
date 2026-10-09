@@ -19,7 +19,16 @@
     "forceConsistentCasingInFileNames": true,
     "allowJs": true,
     "checkJs": true,
-    "noEmit": true
+    "noEmit": true,
+    "customConditions": ["source"]
   },
-  "include": ["scripts/**/*.mjs", "scripts/**/*.ts", "*.config.ts", "*.config.js", "tests/**/*.ts"]
+  "include": [
+    "scripts/**/*.mjs",
+    "scripts/**/*.ts",
+    "*.config.ts",
+    "*.config.js",
+    "tests/**/*.ts",
+    "packages/*/src/**/*.ts",
+    "packages/*/tests/**/*.ts"
+  ]
 }
