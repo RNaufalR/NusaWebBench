@@ -22,18 +22,18 @@ Lingkungan verifikasi: Node `v22.22.3`, npm `10.9.8`, Linux x86_64, 2 vCPU, RAM 
 
 Ini adalah informasi registry, **bukan** versi yang sudah diuji di repo. Versi final akan dipin dan diuji pada task masing-masing.
 
-| Paket | Versi terbaru di registry |
-|---|---|
-| vite | 8.3.4 |
-| react | 19.3.0 |
-| typescript | 7.0.2 |
-| vitest | 5.0.3 |
-| playwright | 1.64.0 |
-| lighthouse | 13.5.0 |
-| zod | 4.6.5 |
-| better-sqlite3 | 13.0.3 |
-| eslint | 10.12.0 |
-| prettier | 3.9.9 |
+| Paket          | Versi terbaru di registry |
+| -------------- | ------------------------- |
+| vite           | 8.3.4                     |
+| react          | 19.3.0                    |
+| typescript     | 7.0.2                     |
+| vitest         | 5.0.3                     |
+| playwright     | 1.64.0                    |
+| lighthouse     | 13.5.0                    |
+| zod            | 4.6.5                     |
+| better-sqlite3 | 13.0.3                    |
+| eslint         | 10.12.0                   |
+| prettier       | 3.9.9                     |
 
 Catatan: versi `typescript 7.x` dan `eslint 10.x` adalah rilis mayor yang perlu dicek kompatibilitasnya dengan plugin ESLint/TypeScript yang dipakai. Jika tidak kompatibel, versi lebih lama akan dipakai dan alasannya dicatat di ADR baru.
 
