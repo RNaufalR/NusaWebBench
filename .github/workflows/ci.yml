@@ -57,6 +57,9 @@ jobs:
     timeout-minutes: 20
     env:
       REQUIRE_BROWSER_TESTS: '1'
+      # Runner Ubuntu terbaru membatasi user namespace tanpa privilege sehingga sandbox Chrome
+      # (dipakai Lighthouse) dapat gagal. Opt-in ini hanya untuk runner CI sementara (R-LH-1).
+      NWB_CHROME_NO_SANDBOX: '1'
     steps:
       - uses: actions/checkout@v4
         with:
