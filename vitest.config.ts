@@ -13,6 +13,10 @@ export default defineConfig({
     alias: {
       '@nusawebbench/core': path.join(root, 'packages/core/src/index.ts'),
       '@nusawebbench/storage': path.join(root, 'packages/storage/src/index.ts'),
+      '@nusawebbench/orchestrator': path.join(root, 'packages/orchestrator/src/index.ts'),
+      '@nusawebbench/report': path.join(root, 'packages/report/src/index.ts'),
+      '@nusawebbench/fixtures': path.join(root, 'packages/fixtures/src/index.ts'),
+      '@nusawebbench/browser-qa': path.join(root, 'packages/browser-qa/src/index.ts'),
     },
   },
   test: {

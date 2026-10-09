@@ -161,6 +161,12 @@ export class RunRepository {
     return rows.map((r) => this.get(String(r['id']))).filter((r): r is Run => r !== null);
   }
 
+  /** Versi CAS saat ini, atau null bila run tidak ada. */
+  version(id: string): number | null {
+    const row = this.db.prepare('SELECT version FROM runs WHERE id = ?').get(id) as Row | undefined;
+    return row ? Number(row['version']) : null;
+  }
+
   /**
    * Transisi status dengan compare-and-set: hanya berhasil jika status masih `from` dan versi cocok.
    * Transisi yang tidak diizinkan oleh ALLOWED_RUN_TRANSITIONS ditolak.

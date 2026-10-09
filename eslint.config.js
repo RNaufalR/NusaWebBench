@@ -6,7 +6,16 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**', 'data/**', 'build/**', '.toolchain/**'],
+    ignores: [
+      'node_modules/**',
+      'dist/**',
+      'coverage/**',
+      'data/**',
+      'build/**',
+      '.toolchain/**',
+      // Fixture sintetis sengaja memuat error browser untuk uji ground truth (lihat fixtures/ground-truth.json).
+      'fixtures/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.strict,

@@ -160,6 +160,7 @@ export const AuthorizationSchema = z.strictObject({
   scopeHash: Sha256Schema.nullable(),
   approvedAt: IsoDateTimeSchema.nullable(),
 });
+export type Authorization = z.infer<typeof AuthorizationSchema>;
 
 const IdListSchema = z.array(IdSchema).max(5000);
 
