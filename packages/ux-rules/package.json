@@ -1,0 +1,32 @@
+{
+  "name": "@nusawebbench/ux-rules",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UX/accessibility heuristic engine (UX_RULES): pemeriksaan DOM deterministik dengan rule ID dan versi.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@nusawebbench/browser-qa": "0.1.0",
+    "@nusawebbench/core": "0.1.0",
+    "@nusawebbench/orchestrator": "0.1.0",
+    "@nusawebbench/storage": "0.1.0",
+    "playwright-core": "1.64.0",
+    "zod": "4.6.5"
+  }
+}

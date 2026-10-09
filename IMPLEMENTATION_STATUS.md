@@ -22,7 +22,7 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-070 | Target fixture suite dan ground truth             | VERIFIED | T-010, T-020                                    |
 | T-080 | Functional QA adapter (Playwright)                | VERIFIED | T-040, T-050, T-060, T-070                      |
 | T-090 | Lighthouse adapter                                | VERIFIED | T-040, T-050, T-060, T-070                      |
-| T-100 | Deterministic UX/accessibility heuristic engine   | PLANNED  | T-020, T-060, T-070, T-080                      |
+| T-100 | Deterministic UX/accessibility heuristic engine   | VERIFIED | T-020, T-060, T-070, T-080                      |
 | T-110 | Gemini adapter                                    | PLANNED  | T-010, T-020, T-030, T-060                      |
 | T-120 | Groq adapter                                      | PLANNED  | T-010, T-020, T-030, T-060                      |
 | T-130 | AI router, capability registry, free-tier lock    | PLANNED  | T-110, T-120                                    |
@@ -37,7 +37,7 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-220 | CI, release checks, artifact validation           | PLANNED  | seluruh task rilis                              |
 | T-230 | Final acceptance audit dan release handoff        | PLANNED  | T-000 s.d. T-220                                |
 
-Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED`: T-000 s.d. T-090 (10 task). Sisanya (T-100 s.d. T-230) `PLANNED`. Tidak ada task yang `EXECUTED` atau `BLOCKED` saat ini.
+Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED`: T-000 s.d. T-100 (11 task). Sisanya (T-110 s.d. T-230) `PLANNED`. Tidak ada task yang `EXECUTED` atau `BLOCKED` saat ini.
 
 ---
 
@@ -651,6 +651,69 @@ Known limitations:
 - Lighthouse tidak punya route guard. Pembatasan jaringan hanya lewat `--host-resolver-rules` Chrome (R-LH-1).
 - `--no-sandbox` dipakai agar Chrome berjalan di container/sandbox. Ini memperlemah isolasi proses Chrome (R-LH-1).
 - Status PASS berarti eksekusi dan validasi berhasil, bukan ambang skor.
+
+---
+
+## T-100 — Deterministic UX/accessibility heuristic engine
+
+ID: T-100
+Title: Deterministic UX/accessibility heuristic engine
+Status: VERIFIED
+Depends on: T-020, T-060, T-070, T-080
+
+Files changed:
+
+- Baru: `packages/ux-rules/` — `package.json`, `tsconfig.build.json`, `src/rules.ts` (registry `RULE_CATALOG` dengan 10 `ruleId`, versi, kind objective/subjective, severity, applicability, detection, evidence, remediation, limitation; `SnapshotSchema`; `evaluateSnapshot` murni; suppression), `src/collect.ts` (skrip DOM dalam string + `collectSnapshot` lewat Playwright dengan guard scope), `src/adapter.ts` (`UxRulesAdapter`, `parseUxRulesConfig`), `tests/rules.test.ts` (20 tes murni), `tests/adapter.test.ts` (16 tes; 11 butuh Chromium).
+- Baru: `fixtures/a11y-defects/assets/logo.svg` — koreksi fixture (lihat "Koreksi" di bawah).
+- Diubah: `vitest.config.ts` (alias), `package-lock.json`.
+
+Koreksi yang dicatat:
+
+- `fixtures/a11y-defects/index.html` memanggil `/assets/logo.svg` tetapi berkas itu tidak ada. Akibatnya halaman menghasilkan temuan gambar rusak yang tidak ada di ground truth. Aset sintetis ditambahkan (salinan `fixtures/clean/assets/logo.svg`). Ground truth tidak diubah.
+- Temuan salah positif ditemukan saat tes `fixture clean`: tiga tautan di `nav` dianggap "kartu berulang". Diperbaiki: kelompok hanya dihitung bila setiap item punya minimal dua elemen anak. Tes regresi ditambahkan.
+- Kebocoran: snapshot awalnya disimpan tanpa redaksi. Diperbaiki dengan redaksi per nilai string; tes secret di teks halaman ditambahkan.
+
+Acceptance criteria dan bukti:
+
+- Hasil fixture sama di run berulang: `determinisme: dua run pada fixture yang sama` (Chromium) dan `evaluateSnapshot` murni deterministik (tes murni).
+- Setiap temuan memiliki `ruleId`, `ruleVersion`, selector, dan evidence (artefak snapshot): tes adapter (`pelanggaran objektif`) dan verifikasi hasil.
+- Ground truth UX_RULES cocok persis (multiset `ruleId`) untuk `a11y-defects` (5), `ux-signals` (5), dan `broken-resources` (1): `ground truth UX_RULES`.
+- Fixture `clean` tidak menghasilkan temuan: PASS, nol temuan.
+- Tidak ada label "AI-generated": engine tidak memakai AI.
+
+Negative tests (sesuai taskbook §12 T-100):
+
+- DOM kosong → nol temuan ✓ (tes murni dan adapter)
+- dynamically loaded DOM: DOM yang disisipkan sebelum DOMContentLoaded ikut terperiksa ✓; DOM yang disisipkan setelah load TIDAK terperiksa (batasan, diuji) ✓
+- duplicate labels → temuan subjektif `ux-duplicate-cta` ✓
+- off-screen elements: elemen dengan `visible=false` tidak diperiksa label-nya ✓ (tes murni)
+- shadow DOM / iframe: tidak ditelusuri (batasan, diuji: tidak menghasilkan temuan dari dalam shadow root/iframe) ✓
+- CSS missing: halaman tetap diperiksa, PASS ✓
+- responsive viewport changes: overflow hanya pada 390px, tidak pada 1440px ✓
+- selector ambiguity: dua tombol identik mendapat selector berbeda (`:nth-of-type`) ✓
+- tambahan: timeout (ERROR TIMEOUT retryable), redirect keluar scope (ERROR, tanpa temuan), pembatalan (CANCELLED), browser gagal (UNAVAILABLE), snapshot rusak (ERROR TOOL_FAILED), executable hilang (UNAVAILABLE TOOL_MISSING).
+
+Audit khusus:
+
+- Heuristic accuracy/false positives: satu FP ditemukan dan diperbaiki (nav). Dicatat sebagai batasan: heuristik "kartu berulang" hanya melihat struktur DOM. Daftar generik terbatas. `ux-duplicate-cta` hanya untuk button, sehingga tautan "Pelajari" yang berulang di ux-signals tidak dilaporkan (keputusan sengaja).
+- Severity mapping: sesuai `RULE_CATALOG`; objective → FAIL, subjektif saja → WARN, tidak ada → PASS. Subjektif tidak pernah membuat FAIL.
+- Evidence completeness: setiap temuan mereferensikan artefak snapshot; bila artefak gagal disimpan, temuan objektif turun ke LIKELY (diuji lewat `saveSnapshot` yang mengembalikan null, dan kode jalurnya).
+- Rule version migration: `ruleVersion` disimpan per temuan; `UX_RULES_REGISTRY_VERSION` 1.0.0. Migrasi versi belum diimplementasikan (tidak ada versi kedua).
+- Suppression: status `SUPPRESSED` + alasan; snapshot mentah tetap tersimpan (diuji).
+
+Commands actually run:
+
+- `npx vitest run packages/ux-rules` dengan `CHROMIUM_PATH=/tmp/chromium` — 36/36 lulus.
+- `REQUIRE_BROWSER_TESTS=1 npx vitest run packages/ux-rules` — 36/36 lulus.
+- `npx vitest run packages/ux-rules` tanpa `CHROMIUM_PATH` — 25 lulus, 11 dilewati.
+- `npx tsc -p tsconfig.json --noEmit` — PASS. `npx eslint packages/ux-rules --max-warnings=0` — PASS.
+
+Known limitations:
+
+- Hanya satu halaman (`startPath`) per run; tidak ada crawling (low-resource).
+- Tidak ada screenshot; evidence berupa snapshot DOM JSON.
+- Lazy-load image yang belum dimuat tidak diperiksa oleh `ux-broken-image`.
+- Teks alt tidak dinilai kualitasnya; daftar heading generik terbatas.
 
 ---
 
