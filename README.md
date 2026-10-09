@@ -1,42 +1,116 @@
 # NusaWebBench
 
-NusaWebBench adalah toolkit audit kualitas website yang **lokal-first**, **evidence-first**, dan **deterministik** untuk pengukuran inti. Status proyek saat ini: fondasi pengembangan (lihat `IMPLEMENTATION_STATUS.md`). Belum ada fitur audit yang dinyatakan siap.
+Alat audit web **lokal** dengan pemeriksaan deterministik (QA fungsional, UX/aksesibilitas, Lighthouse)
+dan provider AI opsional. Core berjalan tanpa API key, tanpa Docker, dan tanpa jaringan.
+
+> Hanya untuk target yang Anda miliki atau yang memiliki izin tertulis untuk diuji. Lihat [SECURITY.md](SECURITY.md).
 
 ## Prasyarat
 
-- Node.js `24.21.0` (lihat `.nvmrc`). Versi lain di luar `>=24 <25` ditolak oleh `engines`.
-- npm (bawaan Node).
+- Node.js 24 (versi yang di-pin di `.nvmrc`, lihat ADR-0002). **Perhatian:** menurut https://nodejs.org/en/about/previous-releases (diperiksa 2026-10-09), Node 24 LTS sudah mencapai akhir masa dukungan pada 2026-09-07. Pin ini belum diperbarui; lihat R-NODE-1 di IMPLEMENTATION_STATUS.md.
+- Chromium untuk modul browser. Dapat dipasang lewat Playwright:
+  `npx playwright-core install --with-deps chromium`, lalu atur `CHROMIUM_PATH` ke path executable.
+- Opsional: `k6` (`K6_BIN`), Docker + Strix (tidak dapat diverifikasi di sandbox; lihat batasan).
 
-## Setup dan quality gates
+## Instalasi dan quality gates
 
 ```bash
 npm ci
-npm run check
+npm run check        # format:check, lint, typecheck, test, secret-scan
+npm run build        # build semua paket ke dist/
 ```
 
-`npm run check` menjalankan secara berurutan:
+Tes browser dijalankan jika `CHROMIUM_PATH` diatur. Untuk mewajibkannya (seperti di CI):
 
-| Script                 | Fungsi                                            |
-| ---------------------- | ------------------------------------------------- |
-| `npm run format:check` | Prettier `--check`                                |
-| `npm run lint`         | ESLint (flat config, `--max-warnings=0`)          |
-| `npm run typecheck`    | TypeScript strict                                 |
-| `npm run test`         | Vitest (unit test)                                |
-| `npm run secret-scan`  | Pemindaian pola secret pada file yang dilacak git |
+```bash
+CHROMIUM_PATH=/path/ke/chromium REQUIRE_BROWSER_TESTS=1 npx vitest run
+```
 
-Tidak ada API key, akun cloud, Docker, atau akses internet yang dibutuhkan untuk gate ini.
+Tanpa `CHROMIUM_PATH`, tes browser dilewati secara eksplisit (dilaporkan sebagai _skipped_).
 
-## Konfigurasi
+## Menjalankan dashboard
 
-Salin `.env.example` ke `.env` jika perlu. Jangan pernah commit `.env`. Default aman:
-`AI_PROVIDER=none`, `FREE_TIER_LOCK=true`, `STRIX_ENABLED=false`, `K6_ENABLED=false`.
+```bash
+npm run web          # build lalu start server di 127.0.0.1:4178
+```
+
+Konfigurasi dari environment (lihat `.env.example`): `HOST` (harus loopback), `PORT`, `DATABASE_PATH`,
+`ARTIFACTS_DIR`. Buka `http://127.0.0.1:4178`. Alur: tambah target → pilih modul → centang konfirmasi
+izin → pratinjau rencana → jalankan → buat laporan → unduh artefak.
+
+Endpoint diagnostik: `GET /api/diagnostics` (disk, DB, tool; tanpa telemetri).
+
+## Core tanpa AI
+
+Default `.env.example` (`AI_PROVIDER=none`, `FREE_TIER_LOCK=true`) tidak memerlukan API key. Semua
+pemeriksaan deterministik tetap berjalan.
+
+## Provider AI (opsional, nonaktif secara default)
+
+1. Isi `GEMINI_API_KEY` dan/atau `GROQ_API_KEY` di `.env` lokal (jangan di-commit).
+2. Isi `GEMINI_MODEL` atau `GROQ_MODEL` dengan model yang ada di registry (`packages/ai/src/registry.ts`).
+3. Set `AI_PROVIDER=gemini` atau `groq`, dan `AI_ALLOW_EXTERNAL_DATA=true`.
+4. Di dashboard, berikan persetujuan data eksternal. Data yang dikirim meninggalkan mesin ini.
+
+Catatan:
+
+- `FREE_TIER_LOCK=true` memblokir model yang belum diverifikasi free tier. Entri bawaan belum diverifikasi,
+  jadi AI tidak akan aktif sampai registry diubah secara sadar (ADR-0004).
+- Kuota provider berubah menurut tier dan model. Penghitung lokal hanya mengukur penggunaan aplikasi.
+  Reset penghitung lokal tidak mereset kuota provider.
+- Tes live manual: `AI_LIVE_TESTS=1 npx vitest run packages/ai/tests/live.optin.test.ts`. Tes ini tidak
+  berjalan di CI dan memakai kuota akun Anda.
+- Endpoint dan header provider belum dikonfirmasi penuh dari dokumen dalam sesi ini (R-AI-2).
+
+## Fixture lokal dan ground truth
+
+`fixtures/` berisi halaman sintetis (`clean`, `functional-defects`, `a11y-defects`, `ux-signals`,
+`broken-resources`, `security-lab`). `fixtures/ground-truth.json` mendaftar temuan yang diharapkan.
+`clean` tidak boleh menghasilkan temuan objektif. `security-lab` sengaja rentan dan hanya untuk uji lokal.
+
+## Target remote dan cakupan
+
+- Target `url` (remote) hanya untuk modul yang dapat dijamin cakupannya. Modul browser (FUNCTIONAL_QA,
+  UX_RULES, LIGHTHOUSE) dan LOAD_K6 serta SECURITY_STRIX diblokir untuk remote, karena DNS pinning
+  belum dapat dijamin.
+- Setiap run memerlukan konfirmasi eksplisit dan tercatat di ringkasan otorisasi.
+
+## Load test (k6) — risiko
+
+- `K6_ENABLED=false` secara default. Hanya preset `fixed-smoke` (maksimum 2 VU, 5 request/detik,
+  30 detik, 100 request total). Stress, flood, dan spike tidak tersedia.
+- Butuh binary k6 di `K6_BIN`. Adapter menolak remote; buildRunPlan juga memblokir remote.
+- Tes k6 nyata bersifat opt-in (`K6_BIN` diatur). Di sandbox pengembangan binary tidak tersedia.
+
+## Strix — batasan
+
+- `STRIX_ENABLED=false` secara default. Strix membutuhkan Docker dan provider/model yang kompatibel.
+- Adapter saat ini hanya menjalankan gerbang (lokal saja, Docker, kunci, allowlist model). Runner
+  pemindaian belum diverifikasi terhadap CLI aktual, sehingga pemindaian tidak dijalankan.
+- Konfigurasi default Strix menunjuk model OpenRouter; itu bukan Gemini/Groq dan belum dibuktikan kompatibel.
+
+## Perbandingan sebelum/sesudah dan remediasi
+
+Modul `packages/compare` menyediakan perbandingan run (FIXED_VERIFIED hanya dengan bukti sah, REGRESSION
+hanya bila perbandingan sebanding), panduan remediasi berbasis URL, dan proposal patch lewat `git worktree`
+sementara. Proposal tidak pernah menulis ke repository pengguna dan tidak melakukan merge atau deploy.
+Fitur ini belum tersedia di UI dashboard.
+
+## Batasan umum
+
+- Pemeriksaan deterministik hanya mengukur apa yang dapat diukur dari DOM, Lighthouse, dan k6. Tidak ada
+  jaminan bahwa target bebas bug atau aman.
+- Dashboard tidak memiliki autentikasi. Jangan membukanya ke jaringan.
+- Lihat `IMPLEMENTATION_STATUS.md` untuk status per task, bukti, dan risk register.
 
 ## Dokumentasi
 
-- `NusaWebBench_Master_Spec_and_Taskbook.md` — spesifikasi dan task (sumber kebenaran).
-- `IMPLEMENTATION_STATUS.md` — status setiap task beserta bukti.
-- `docs/decisions/` — ADR (keputusan arsitektur).
+- Taskbook: `NusaWebBench_Master_Spec_and_Taskbook.md`
+- Status implementasi: `IMPLEMENTATION_STATUS.md`
+- Keamanan: `SECURITY.md`
+- Keputusan arsitektur: `docs/decisions/`
+- Audit rilis: `RELEASE_AUDIT.md`
 
 ## Lisensi
 
-Belum ditentukan oleh pemilik repositori. Sampai ada file `LICENSE`, kode ini tidak diberikan lisensi open source.
+UNLICENSED (proyek internal). Strix dilisensikan Apache-2.0 oleh penyedianya; tidak dibundel di repository ini.

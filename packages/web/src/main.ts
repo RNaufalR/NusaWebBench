@@ -2,6 +2,14 @@
  * Composition root dashboard. Membaca konfigurasi dari environment, merakit adapter, dan menjalankan
  * server loopback. Tidak ada API key yang diperlukan; AI tetap nonaktif kecuali dikonfigurasi.
  */
+import {
+  accessSync,
+  constants as fsConstants,
+  existsSync,
+  mkdirSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from '@nusawebbench/core';
 import { FunctionalQaAdapter } from '@nusawebbench/browser-qa';
@@ -57,6 +65,36 @@ async function main(): Promise<void> {
     aiSettings,
     aiService,
     allowedHosts: ['127.0.0.1', 'localhost', ...extraHosts],
+    diagnose: async () => {
+      const artifactsRoot = path.resolve(config.ARTIFACTS_DIR);
+      let artifactsWritable = false;
+      try {
+        mkdirSync(artifactsRoot, { recursive: true });
+        const probe = path.join(artifactsRoot, `.probe-${process.pid}`);
+        writeFileSync(probe, 'ok');
+        unlinkSync(probe);
+        accessSync(artifactsRoot, fsConstants.W_OK);
+        artifactsWritable = true;
+      } catch {
+        artifactsWritable = false;
+      }
+      const chromePath = process.env['CHROMIUM_PATH'] ?? '';
+      const k6Path = process.env['K6_BIN'] ?? '';
+      return {
+        database: { reachable: store.runs.list({ limit: 1 }) !== undefined },
+        artifacts: { writable: artifactsWritable },
+        tools: {
+          chromium:
+            chromePath !== '' && existsSync(chromePath)
+              ? 'ditemukan'
+              : 'tidak diatur atau tidak ada',
+          k6: k6Path !== '' && existsSync(k6Path) ? 'ditemukan' : 'tidak diatur (opsional)',
+          strix: config.STRIX_ENABLED ? 'diaktifkan (gerbang belum lengkap)' : 'nonaktif (default)',
+        },
+        ai: { provider: config.AI_PROVIDER, freeTierLock: config.FREE_TIER_LOCK },
+        telemetry: 'tidak ada (diagnostik lokal saja)',
+      };
+    },
   });
   const server = await startServer(app.handle, { host: config.HOST, port: config.PORT });
   const address = server.address();

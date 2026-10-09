@@ -57,13 +57,22 @@ export const SCREEN_EMULATION = Object.freeze({
 export const CHROME_FLAGS = Object.freeze([
   '--headless=new',
   // Diperlukan di lingkungan container/sandbox tanpa user namespace. Lihat risk register (T-090).
-  '--no-sandbox',
   '--disable-gpu',
   '--disable-dev-shm-usage',
   '--disable-background-networking',
   // Hanya loopback yang dapat di-resolve; host lain gagal sebelum koneksi keluar.
   '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost',
 ]);
+
+/**
+ * Flag tambahan dari environment. `--no-sandbox` HANYA ditambahkan bila NWB_CHROME_NO_SANDBOX=1
+ * (diperlukan di sebagian container). Default tetap sandbox Chrome aktif (R-LH-1).
+ */
+export function chromeFlagsFromEnv(env: NodeJS.ProcessEnv): string[] {
+  return env['NWB_CHROME_NO_SANDBOX'] === '1'
+    ? [...CHROME_FLAGS, '--no-sandbox']
+    : [...CHROME_FLAGS];
+}
 
 export type LighthouseRunInput = {
   readonly url: string;
@@ -80,7 +89,10 @@ export type LighthouseRunner = (input: LighthouseRunInput) => Promise<unknown>;
 export const defaultLighthouseRunner: LighthouseRunner = async (input) => {
   const { launch } = await import('chrome-launcher');
   const { default: lighthouse } = await import('lighthouse');
-  const chrome = await launch({ chromePath: input.chromePath, chromeFlags: [...CHROME_FLAGS] });
+  const chrome = await launch({
+    chromePath: input.chromePath,
+    chromeFlags: chromeFlagsFromEnv(process.env),
+  });
   // Pembatalan atau timeout mematikan Chrome; Lighthouse lalu gagal dan runner membersihkan proses.
   const onAbort = (): void => {
     void Promise.resolve(chrome.kill()).catch(() => undefined);

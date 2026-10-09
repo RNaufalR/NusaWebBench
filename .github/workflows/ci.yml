@@ -31,6 +31,25 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Format, lint, typecheck, tests (tanpa browser), secret scan
         run: npm run check
+      - name: Build semua paket
+        run: npm run build
+      - name: Smoke test dashboard dari dist (loopback, tanpa API key)
+        env:
+          DATABASE_PATH: ${{ runner.temp }}/nwb-smoke/db.sqlite
+          ARTIFACTS_DIR: ${{ runner.temp }}/nwb-smoke/artifacts
+          HOST: 127.0.0.1
+          PORT: '4178'
+        run: |
+          node packages/web/dist/main.js > "$RUNNER_TEMP/nwb-web.log" 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:4178/api/health >/dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:4178/api/health
+          curl -fsS http://127.0.0.1:4178/api/providers/status > /dev/null
+          if grep -q -i "gsk_\|AIza" "$RUNNER_TEMP/nwb-web.log"; then echo "rahasia terdeteksi di log"; exit 1; fi
+          kill "$SERVER_PID" || true
 
   browser-tests:
     name: Tes browser (Chromium dari Playwright, wajib)

@@ -65,6 +65,8 @@ export type WebDeps = {
   readonly aiService: AiService;
   readonly allowedHosts: readonly string[];
   readonly now?: () => Date;
+  /** Diagnostik lokal (disk, DB, tool). Tidak ada telemetri jarak jauh. */
+  readonly diagnose?: () => Promise<Record<string, unknown>>;
 };
 
 function parseBody<T>(schema: z.ZodType<T>, input: unknown): T {
@@ -235,6 +237,12 @@ export function createApp(deps: WebDeps) {
   }
 
   add('GET', '/api/health', false, () => ({ kind: 'json', status: 200, body: { ok: true } }));
+
+  add('GET', '/api/diagnostics', false, async () => ({
+    kind: 'json',
+    status: 200,
+    body: deps.diagnose ? await deps.diagnose() : { note: 'diagnostik tidak dikonfigurasi' },
+  }));
 
   add('GET', '/api/modules', false, () => ({
     kind: 'json',

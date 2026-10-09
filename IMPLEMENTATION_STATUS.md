@@ -27,12 +27,12 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-120 | Groq adapter                                      | VERIFIED | T-010, T-020, T-030, T-060                      |
 | T-130 | AI router, capability registry, free-tier lock    | VERIFIED | T-110, T-120                                    |
 | T-140 | Dashboard MVP dan API routes                      | VERIFIED | T-030, T-040, T-050, T-060, T-080               |
-| T-150 | k6 adapter dan safety gates                       | PLANNED  | T-040, T-050, T-060, T-070, T-140               |
-| T-160 | Strix adapter                                     | PLANNED  | T-040, T-050, T-060, T-070                      |
-| T-170 | Before/after comparison dan remediation proposals | PLANNED  | T-060, T-080, T-090, T-100, T-140               |
+| T-150 | k6 adapter dan safety gates                       | EXECUTED | T-040, T-050, T-060, T-070, T-140               |
+| T-160 | Strix adapter                                     | EXECUTED | T-040, T-050, T-060, T-070                      |
+| T-170 | Before/after comparison dan remediation proposals | EXECUTED | T-060, T-080, T-090, T-100, T-140               |
 | T-180 | Provider settings, usage, privacy controls        | VERIFIED | T-110, T-120, T-130, T-140                      |
-| T-190 | Security hardening dan threat-model verification  | PLANNED  | T-040 s.d. T-180                                |
-| T-200 | Low-resource behavior, reliability, cleanup       | PLANNED  | T-050, T-060, T-080, T-090, T-140, T-150, T-160 |
+| T-190 | Security hardening dan threat-model verification  | VERIFIED | T-040 s.d. T-180                                |
+| T-200 | Low-resource behavior, reliability, cleanup       | EXECUTED | T-050, T-060, T-080, T-090, T-140, T-150, T-160 |
 | T-210 | Documentation and onboarding                      | PLANNED  | T-010 s.d. T-200                                |
 | T-220 | CI, release checks, artifact validation           | PLANNED  | seluruh task rilis                              |
 | T-230 | Final acceptance audit dan release handoff        | PLANNED  | T-000 s.d. T-220                                |
@@ -950,6 +950,149 @@ Known limitation: UI untuk "model config" dan "capability info" hanya menampilka
 
 ---
 
+## T-150 — k6 adapter dan safety gates
+
+ID: T-150
+Title: k6 adapter dan safety gates
+Status: EXECUTED
+Depends on: T-040, T-050, T-060, T-070, T-140
+
+Files: `packages/load-k6/` (`src/k6.ts`, `tests/k6.test.ts`, 20 tes + 1 opt-in), `packages/load-k6/tsconfig.build.json`.
+
+Yang sudah dibuktikan (`npx vitest run packages/load-k6` → 20 lulus, 1 dilewati):
+
+- Default `enabled: false` (SKIPPED `k6-disabled`); remote tanpa acknowledgement → SKIPPED; remote dengan acknowledgement → SCOPE_DENIED (gerbang kedua).
+- Preset tetap `fixed-smoke` saja; batas keras: VU ≤ 2, rate ≤ 5/detik, durasi ≤ 30 detik, rate × durasi ≤ 100 request. Stress/flood/spike ditolak.
+- Nilai non-integer, NaN, string, dan overflow ditolak; path dengan injeksi shell/JS, traversal, `//` (protocol-relative) ditolak.
+- Script k6 dibangun dari nilai tervalidasi dan `JSON.stringify`; tes memastikan baris target persis hasil serialisasi.
+- Proses dijalankan dengan argumen array, `shell: false`, dan lingkungan minimal (tanpa rahasia; tes canary).
+- Validasi ulang scope tepat sebelum spawn; executable diperiksa dengan `k6 version` (tool missing → UNAVAILABLE).
+- Cancel dan timeout membunuh proses (SIGTERM lalu SIGKILL); tes memastikan PID tidak hidup lagi.
+- Parser ringkasan memvalidasi bentuk JSON; metrik yang tidak ada tidak dikarang (tes `observedRequests` tidak diisi).
+- Exit 99 (threshold) → FAIL, bukan error tool; crash atau ringkasan rusak → ERROR TOOL_FAILED.
+
+Yang BELUM dibuktikan (alasan BLOCKED sub-kriteria):
+
+- Tes k6 nyata pada fixture lokal (`K6_BIN`) tidak dijalankan: binary k6 tidak dapat diunduh dari sandbox (host `objects.githubusercontent.com` di luar allowlist, diperiksa 2026-10-09). Paket PyPI bernama `k6` ditemukan, tetapi tidak memiliki metadata pengarang/homepage sehingga tidak dipercaya dan tidak dijalankan.
+- Tes "fixture lokal lulus" dengan k6 nyata karenanya belum ada bukti. Status tetap EXECUTED, bukan VERIFIED.
+
+Catatan: dashboard MVP tidak menyambungkan LOAD_K6 (422 `MODULE_NOT_AVAILABLE`).
+
+---
+
+## T-160 — Strix adapter
+
+ID: T-160
+Title: Strix adapter
+Status: EXECUTED
+Depends on: T-040, T-050, T-060, T-070
+
+Files: `packages/security-strix/` (`src/strix.ts`, `tests/strix.test.ts`, 8 tes).
+
+Sumber (diambil 2026-10-09): https://github.com/usestrix/strix — berjalan di container (Docker), lisensi Apache-2.0, rilis terakhir push 2026-10-08. Contoh konfigurasi default memakai OpenRouter, bukan Gemini/Groq.
+
+Yang sudah dibuktikan (8 tes lulus):
+
+- `STRIX_ENABLED=false` default (SKIPPED `strix-disabled`).
+- Lokal saja: target remote → SCOPE_DENIED.
+- Preflight Docker: Docker tidak ada atau daemon mati → UNAVAILABLE `docker-unavailable` (tes dengan executable palsu).
+- Kunci provider hilang → UNAVAILABLE; model tak dikenal, belum free-tier, atau tanpa kapabilitas teks → ditolak.
+- Konfigurasi di luar batas (runtime > 600 detik, provider `openrouter`) ditolak.
+- Semua gerbang lolos tetap UNAVAILABLE `strix-runner-contract-unverified`: adapter tidak pernah memindai.
+
+Yang BELUM dibuktikan (BLOCKED):
+
+- Runner Strix dan parser output belum diimplementasikan. Kontrak CLI/format output harus diverifikasi terhadap versi aktual, dan itu membutuhkan Docker (tidak tersedia di sandbox).
+- Tes SL-01 pada `security-lab` tidak dijalankan. Kompatibilitas Gemini/Groq dengan Strix belum dibuktikan.
+
+---
+
+## T-170 — Before/after comparison dan remediation proposals
+
+ID: T-170
+Title: Before/after comparison dan remediation proposals
+Status: EXECUTED
+Depends on: T-060, T-080, T-090, T-100, T-140
+
+Files: `packages/compare/` (`src/compare.ts`, `src/patch.ts`, `tests/compare.test.ts`, 22 tes).
+
+Yang sudah dibuktikan:
+
+- Perbandingan: kunci temuan `ruleId|selector|targetUrl`; temuan hilang dengan bukti sah → FIXED_VERIFIED; tanpa bukti (modul ERROR/UNAVAILABLE) → FIXED_UNVERIFIED; temuan baru → REGRESSION.
+- Tidak comparable (origin atau viewport berbeda) diberi blocker; versi aturan/alat atau konfigurasi berbeda diberi warning dan menurunkan klaim ke LIKELY/FIXED_UNVERIFIED (keputusan: klaim kuat hanya bila perbandingan sepenuhnya sebanding).
+- Temuan SUPPRESSED tidak dihitung sebagai OPEN.
+- Panduan remediasi berbasis URL hanya menyusun teks dan tidak mengirim request.
+- Proposal patch lewat `git worktree` sementara: menolak repo kotor (perubahan pengguna), path di luar akar repo (absolut, `..`, `.git`, backslash), revisi dasar tidak valid, diff berisi pola rahasia; repo pengguna tidak berubah; rollback menghapus worktree.
+
+Yang BELUM dibuktikan:
+
+- "Jalankan test relevan dan security checks setelah patch" belum diimplementasikan.
+- Tidak ada integrasi ke UI dashboard. Fungsi ini tersedia sebagai library.
+- Tidak ada uji untuk "Git unavailable" secara langsung (galat dipetakan ke TOOL_FAILED, tetapi belum diuji).
+
+---
+
+## T-200 — Low-resource behavior, reliability, dan cleanup
+
+ID: T-200
+Title: Low-resource behavior, reliability, dan cleanup
+Status: EXECUTED
+Depends on: T-050, T-060, T-080, T-090, T-140, T-150, T-160
+
+Yang sudah ada dan diuji:
+
+- Default satu run aktif (antrean orchestrator; run lain QUEUED). Satu browser context per modul browser; modul berurutan.
+- Batas artefak 50 MiB per berkas (`MAX_ARTIFACT_BYTES`); batas laporan (`MAX_REPORT_BYTES`); batas body API 16 KB; batas respons provider AI 1 MB; batas output AI 16.000 karakter.
+- Batas memori log progres orchestrator: 2000 entri terbaru (`MAX_PROGRESS_ENTRIES`, ditambahkan di T-200).
+- Timeout proses (k6 dan Strix gate), SIGTERM/SIGKILL, dan tes tidak ada proses yatim (k6).
+- Direktori kerja sementara k6 dihapus pada akhir run (tes). Worktree sementara dihapus pada rollback (tes).
+- Diagnostik lokal `GET /api/diagnostics` (disk writable, DB, tool) tanpa telemetri jarak jauh (tes: tidak memuat rahasia).
+
+Yang BELUM ada atau BELUM diuji:
+
+- Retention/cleanup artefak dengan preview belum diimplementasikan. Kriteria "retention berada di artifact root; cleanup dapat dipreview" belum terpenuhi.
+- Batas jumlah screenshot tidak relevan karena UX_RULES tidak mengambil screenshot; batas crawl/halaman untuk FUNCTIONAL_QA ada di kode (antrean 200) tetapi tidak diuji ulang di task ini.
+- Benchmark resource lokal TIDAK dilakukan. Tidak ada angka performa yang diklaim.
+- Skenario disk penuh dan browser crash belum disimulasikan.
+
+---
+
+## T-190 — Security hardening dan threat-model verification
+
+ID: T-190
+Title: Security hardening dan threat-model verification
+Status: VERIFIED
+Depends on: T-040 sampai T-180 (bagian yang tersedia)
+
+Files: `SECURITY.md` (cakupan, pelaporan, batasan, prosedur uji aman, tabel ancaman → kendali → bukti), `docs/decisions/ADR-0005-dashboard-loopback-and-api-security.md`, perubahan `packages/lighthouse/src/lighthouse.ts` (`--no-sandbox` opt-in) dan `packages/lighthouse/tests/flags.test.ts`, `scripts/secret-scan.mjs` (perbaikan false positive).
+
+Audit yang dijalankan (2026-10-09):
+
+- Secrets: `node scripts/secret-scan.mjs` → findings=0 (setelah perbaikan false positive referensi properti; literal rahasia sungguhan tetap terdeteksi, diuji dengan berkas sementara).
+- innerHTML / dangerouslySetInnerHTML di kode server: tidak ada. Hanya string JS di `pages.ts` yang diuji tidak memuat `innerHTML`.
+- SQL: satu `db.exec` dengan template di `migrations.ts`, interpolasi hanya konstanta dari `constants.ts` (bukan input pengguna).
+- Proses anak (`child_process`): hanya `compare/patch.ts` (git), `load-k6/k6.ts` (k6), `security-strix/strix.ts` (docker). Semua `execFile`/`spawn` dengan argumen array dan tanpa shell.
+- `fetch` sisi server: hanya di klien provider AI, melalui `fetchImpl` yang dapat diganti.
+- Scope guard: semua adapter yang menjangkau jaringan memanggil `checkUrlInScope` atau memasang route guard (browser-qa, ux-rules, lighthouse, load-k6, security-strix).
+- Dependensi: `npm audit --omit=dev` → 0 kerentanan (2026-10-09).
+- Lisensi dependensi produksi (120 paket): MIT 66, Apache-2.0 22, BSD-3-Clause 5, ISC 5, BSD-2-Clause 1, 0BSD 1, (MIT OR CC0-1.0) 1, MPL-2.0 1 (`axe-core`, dipakai tanpa modifikasi), UNLICENSED 10 (paket workspace internal).
+- Lighthouse `--no-sandbox` sekarang opt-in (`NWB_CHROME_NO_SANDBOX=1`). Tes lulus dengan dan tanpa opt-in di sandbox ini.
+- Batas log progres orchestrator (T-200) menutup antrean tak terbatas.
+
+Acceptance:
+
+- Critical safety tests lulus: suite penuh (507 lulus) termasuk tes scope, dashboard, AI, k6, Strix gate, dan compare.
+- Tidak ada known critical/high tanpa status: R-LH-1 diturunkan ke Medium setelah sandbox default aktif (sisa risiko: container tanpa user namespace harus menyalakan opt-in dan menerima pelemahan isolasi). R-NODE-1 (Node 24 EOL) berstatus terbuka dengan keputusan pemilik proyek diperlukan.
+- Scope guard digunakan semua adapter (lihat audit).
+- Secrets tidak ditemukan dalam tracked files (findings=0).
+- Limitation tercatat di `SECURITY.md`.
+
+Catatan jujur: pengujian SSRF/redirect/IP privat secara ekstensif berada pada `packages/core/tests/scope.test.ts` (25 tes, dibuat di T-040). Tidak ada serangan baru yang dijalankan di luar fixture lokal.
+
+---
+
+---
+
 ## Verifikasi otomatis pada branch (CI)
 
 Workflow: `.github/workflows/ci.yml`.
@@ -993,6 +1136,8 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-AI-3 — Kelayakan free tier per model belum diverifikasi; semua entri registry bawaan `freeTierAllowlisted: false`, sehingga FREE_TIER_LOCK=true memblokir semua model sampai registry diubah secara sadar. Status: terbuka (by design).
 - R-WEB-1 — Dashboard hanya bind ke loopback dan tidak punya autentikasi. Preview publik sandbox tidak dapat mengakses server tanpa membuka bind non-loopback (ditolak). Mitigasi: `ALLOWED_HOSTS` hanya menambah nama Host; bind tetap loopback. Status: terbuka.
 - R-WEB-2 — Idempotency-Key disimpan di memori proses; restart menghapusnya. Status: terbuka (sesuai keputusan T-050).
+
+- R-NODE-1 — `.nvmrc` dan `engines` memakai Node 24. Menurut nodejs.org (diperiksa 2026-10-09), Node 24 LTS mencapai akhir dukungan pada 2026-09-07 dan Node 26 adalah rilis Current. Memperbarui pin mengubah seluruh toolchain (Playwright, tes, native `node:sqlite`) sehingga perlu verifikasi ulang penuh. Status: terbuka, perlu keputusan pemilik proyek (ADR-0002 perlu direvisi).
 
 ## Log task lainnya
 

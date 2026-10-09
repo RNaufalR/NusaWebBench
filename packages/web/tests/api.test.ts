@@ -422,3 +422,12 @@ describe('audit lokal end-to-end (fixture, Chromium nyata)', () => {
     180_000,
   );
 });
+
+describe('diagnostik lokal (T-200)', () => {
+  it('GET /api/diagnostics tanpa dependency diagnostik mengembalikan catatan, bukan rahasia', async () => {
+    const r = await call('GET', '/api/diagnostics');
+    expect(r.status).toBe(200);
+    expect(r.text).not.toContain(KEY_CANARY);
+    expect(r.json).toHaveProperty('note');
+  });
+});

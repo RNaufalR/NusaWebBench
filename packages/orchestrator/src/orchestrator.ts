@@ -54,6 +54,8 @@ export interface ModuleAdapter {
   run(ctx: ModuleContext): Promise<ModuleOutcome>;
 }
 
+export const MAX_PROGRESS_ENTRIES = 2000;
+
 export type OrchestratorOptions = {
   readonly store: Store;
   readonly adapters: readonly ModuleAdapter[];
@@ -522,6 +524,10 @@ export class RunOrchestrator {
     const progress = (message: string) => {
       seq++;
       this.progressLog.push({ runId, module: adapter.module, seq, message: message.slice(0, 300) });
+      // Batas memori log progres (low-resource, taskbook T-200): simpan 2000 entri terbaru.
+      if (this.progressLog.length > MAX_PROGRESS_ENTRIES) {
+        this.progressLog.splice(0, this.progressLog.length - MAX_PROGRESS_ENTRIES);
+      }
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
     let onRunAbort: (() => void) | undefined;
