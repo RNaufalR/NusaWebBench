@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "label": "synthetic/demo",
+  "note": "Ground truth untuk fixture lokal. Semua halaman sintetis; tidak ada data nyata atau secret. Setiap temuan diharapkan dapat direproduksi dengan metode yang tercantum.",
+  "fixtures": [
+    {
+      "id": "clean",
+      "path": "fixtures/clean",
+      "purpose": "Baseline bersih. Tidak boleh menghasilkan temuan objektif.",
+      "expectedFindings": []
+    },
+    {
+      "id": "functional-defects",
+      "path": "fixtures/functional-defects",
+      "purpose": "Cacat fungsional yang dapat direproduksi.",
+      "expectedFindings": [
+        {
+          "id": "FD-01",
+          "module": "FUNCTIONAL_QA",
+          "kind": "page-error",
+          "expectedSeverity": "HIGH",
+          "method": "Halaman memicu uncaught exception saat dimuat (app.js).",
+          "limitation": "Hanya terdeteksi bila listener pageerror aktif sebelum navigasi."
+        },
+        {
+          "id": "FD-02",
+          "module": "FUNCTIONAL_QA",
+          "kind": "console-error",
+          "expectedSeverity": "MEDIUM",
+          "method": "console.error saat memuat app.js.",
+          "limitation": "Teks log direduksi; tidak ada data sensitif."
+        },
+        {
+          "id": "FD-03",
+          "module": "FUNCTIONAL_QA",
+          "kind": "broken-internal-link",
+          "expectedSeverity": "MEDIUM",
+          "method": "Tautan /broken-link.html mengembalikan 404.",
+          "limitation": "Hanya tautan yang ditemukan pada halaman yang di-crawl."
+        },
+        {
+          "id": "FD-04",
+          "module": "FUNCTIONAL_QA",
+          "kind": "http-error-response",
+          "expectedSeverity": "LOW",
+          "method": "Klik #load-btn memanggil /api/missing-resource yang mengembalikan 404.",
+          "limitation": "Memerlukan interaksi dengan tombol; tidak dijalankan oleh crawl pasif."
+        }
+      ]
+    },
+    {
+      "id": "a11y-defects",
+      "path": "fixtures/a11y-defects",
+      "purpose": "Cacat aksesibilitas yang dapat diukur secara deterministik.",
+      "expectedFindings": [
+        {
+          "id": "AX-01",
+          "module": "UX_RULES",
+          "ruleId": "ux-img-alt",
+          "kind": "image-without-alt",
+          "expectedSeverity": "HIGH",
+          "method": "img tanpa atribut alt.",
+          "limitation": "Gambar dekoratif dengan alt kosong tidak dihitung sebagai cacat."
+        },
+        {
+          "id": "AX-02",
+          "module": "UX_RULES",
+          "ruleId": "ux-control-label",
+          "kind": "button-without-label",
+          "expectedSeverity": "HIGH",
+          "method": "button kosong tanpa teks, aria-label, atau aria-labelledby.",
+          "limitation": "Nama aksesibel dari konten tersembunyi tidak diperiksa."
+        },
+        {
+          "id": "AX-03",
+          "module": "UX_RULES",
+          "ruleId": "ux-control-label",
+          "kind": "input-without-label",
+          "expectedSeverity": "HIGH",
+          "method": "input text tanpa label terkait.",
+          "limitation": "Label yang dibuat via JavaScript setelah load tidak terdeteksi."
+        },
+        {
+          "id": "AX-04",
+          "module": "UX_RULES",
+          "ruleId": "ux-heading-level-skip",
+          "kind": "heading-level-skip",
+          "expectedSeverity": "LOW",
+          "method": "h4 muncul tanpa h2/h3 sebelumnya.",
+          "limitation": "Heuristik urutan, bukan penilaian struktur dokumen penuh."
+        },
+        {
+          "id": "AX-05",
+          "module": "UX_RULES",
+          "ruleId": "ux-link-label",
+          "kind": "link-without-text",
+          "expectedSeverity": "HIGH",
+          "method": "Tautan berisi img dengan alt kosong dan tanpa teks lain.",
+          "limitation": "Hanya nama aksesibel dasar yang diperiksa."
+        }
+      ]
+    },
+    {
+      "id": "ux-signals",
+      "path": "fixtures/ux-signals",
+      "purpose": "Sinyal UX deterministik dan pola repetitif. Ini bukan penilaian desain.",
+      "expectedFindings": [
+        {
+          "id": "UX-01",
+          "module": "UX_RULES",
+          "ruleId": "ux-generic-heading",
+          "kind": "generic-heading",
+          "expectedSeverity": "LOW",
+          "method": "Heading 'Heading' dan 'Your Title Here' cocok daftar teks generik.",
+          "limitation": "Daftar kata generik terbatas dan berbahasa Indonesia/Inggris."
+        },
+        {
+          "id": "UX-02",
+          "module": "UX_RULES",
+          "ruleId": "ux-placeholder-text",
+          "kind": "placeholder-copy",
+          "expectedSeverity": "MEDIUM",
+          "method": "Teks 'Lorem ipsum' dan 'TODO' ditemukan pada konten.",
+          "limitation": "Teks yang memang disengaja dapat menghasilkan false positive."
+        },
+        {
+          "id": "UX-03",
+          "module": "UX_RULES",
+          "ruleId": "ux-horizontal-overflow",
+          "kind": "horizontal-overflow",
+          "expectedSeverity": "MEDIUM",
+          "method": "Elemen selebar 1400px pada viewport 390px.",
+          "limitation": "Hanya viewport yang dipilih; elemen yang disembunyikan overflow tidak dihitung."
+        },
+        {
+          "id": "UX-04",
+          "module": "UX_RULES",
+          "ruleId": "ux-duplicate-cta",
+          "kind": "duplicate-button-text",
+          "expectedSeverity": "LOW",
+          "method": "Dua tombol dengan teks 'Daftar' pada konteks yang sama.",
+          "limitation": "Duplikasi yang wajar (mis. di banyak kartu) dapat menjadi false positive."
+        },
+        {
+          "id": "UX-05",
+          "module": "UX_RULES",
+          "ruleId": "ux-repetitive-layout",
+          "kind": "repetitive-card-structure",
+          "expectedSeverity": "INFO",
+          "method": "Tiga kartu dengan struktur h3 + p + a yang identik.",
+          "limitation": "Ini adalah sinyal pola repetitif, bukan bukti bahwa desain dibuat otomatis."
+        }
+      ]
+    },
+    {
+      "id": "broken-resources",
+      "path": "fixtures/broken-resources",
+      "purpose": "Sumber rusak: stylesheet dan gambar tidak ada, tautan internal rusak.",
+      "expectedFindings": [
+        {
+          "id": "BR-01",
+          "module": "FUNCTIONAL_QA",
+          "kind": "http-error-response",
+          "expectedSeverity": "MEDIUM",
+          "method": "/missing.css mengembalikan 404.",
+          "limitation": "Stylesheet yang gagal dimuat dilaporkan sebagai request gagal."
+        },
+        {
+          "id": "BR-02",
+          "module": "UX_RULES",
+          "ruleId": "ux-broken-image",
+          "kind": "broken-image",
+          "expectedSeverity": "MEDIUM",
+          "method": "img src /assets/does-not-exist.png mengembalikan 404.",
+          "limitation": "Hanya gambar yang ada di DOM saat audit."
+        },
+        {
+          "id": "BR-03",
+          "module": "FUNCTIONAL_QA",
+          "kind": "broken-internal-link",
+          "expectedSeverity": "MEDIUM",
+          "method": "Tautan /no-such-page.html mengembalikan 404.",
+          "limitation": "Sama dengan FD-03."
+        }
+      ]
+    },
+    {
+      "id": "security-lab",
+      "path": "fixtures/security-lab",
+      "purpose": "SECURITY LAB sengaja rentan. Hanya untuk pengujian lokal; tidak boleh dibuka ke jaringan luar.",
+      "warning": "Jangan deploy. Server hanya bind ke 127.0.0.1.",
+      "expectedFindings": [
+        {
+          "id": "SL-01",
+          "module": "SECURITY_STRIX",
+          "kind": "reflected-input",
+          "expectedSeverity": "MEDIUM",
+          "method": "Parameter q pada /search dipantulkan tanpa escape.",
+          "limitation": "Ditemukan oleh pemindai keamanan opsional (Strix); tidak dijalankan secara default."
+        }
+      ]
+    }
+  ]
+}

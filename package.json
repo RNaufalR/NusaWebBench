@@ -1,0 +1,37 @@
+{
+  "name": "nusawebbench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lokal-first, evidence-first website quality audit toolkit.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "secret-scan": "node scripts/secret-scan.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run secret-scan",
+    "build": "npm run build --workspaces --if-present",
+    "web": "npm run build --workspaces --if-present && node packages/web/dist/main.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.19.1",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "16.5.0",
+    "prettier": "3.9.9",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.1",
+    "vite": "8.3.4",
+    "vitest": "4.1.11"
+  },
+  "workspaces": [
+    "packages/*"
+  ]
+}

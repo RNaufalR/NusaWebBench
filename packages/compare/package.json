@@ -1,0 +1,28 @@
+{
+  "name": "@nusawebbench/compare",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Perbandingan sebelum/sesudah, panduan remediasi URL-only, dan proposal patch lewat git worktree sementara (T-170).",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@nusawebbench/core": "0.1.0",
+    "zod": "4.6.5"
+  }
+}
