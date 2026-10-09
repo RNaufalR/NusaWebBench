@@ -1061,6 +1061,29 @@ Verifikasi ulang (2026-10-09, sesi verifikasi ketiga):
 - Versi Strix terbaru: v1.7.0 (GitHub release, 2026-10-05). PyPI `strix-agent` 1.7.0 mensyaratkan `requires_python >=3.12`. Dependensi utama termasuk `docker>=7.1.0` dan `litellm>=1.101.0`.
 - Status tetap EXECUTED (BLOCKED). Untuk VERIFIED dibutuhkan di mesin pemilik: Docker daemon, Python ≥3.12, Strix versi dipin, kunci provider dengan budget dan akses jaringan ke provider, runner dan parser berdasarkan output CLI aktual, dan tes SL-01 opt-in pada `security-lab`.
 
+### Pembaruan 2026-10-09 — runner Strix dan workflow manual (commit 583d716)
+
+Yang sudah diimplementasikan (kode, bukan bukti pemindaian):
+
+- `packages/security-strix/src/runner.ts`: argumen non-interaktif (`--non-interactive`, `--target`, `--scan-mode`, `--max-budget-usd`, `--max-turns`), environment minimal (tanpa variabel induk selain PATH dan DOCKER_HOST; `STRIX_TELEMETRY=false`, `STRIX_NO_UPDATE_CHECK=1`, `STRIX_LLM`, `LLM_API_KEY`), eksekusi dengan timeout dan pembatalan yang membunuh process group, serta parser `run.json` dan `vulnerabilities.json` dengan validasi zod.
+- `packages/security-strix/src/strix.ts`: gerbang tambahan. `strixBin` wajib dikonfigurasi eksplisit (tidak ada pencarian di PATH), `strix -v` harus `strix 1.7.0`, status run harus `completed`, dan exit 2 hanya boleh muncul bila ada temuan. Temuan Strix dipetakan sebagai `verification: LIKELY`, `source: AI`, dan status modul WARN. PASS hanya berarti "run selesai tanpa temuan", bukan jaminan keamanan.
+- `.github/workflows/strix-integration.yml`: `workflow_dispatch` saja, `permissions: contents: read`, `ubuntu-latest`, timeout 60 menit, Python 3.12, Strix dipasang `==1.7.0` dalam venv, image sandbox `ghcr.io/usestrix/strix-sandbox:1.3.0` ditarik. Input `run_scan` default `false`. Secret `STRIX_GEMINI_API_KEY` hanya masuk ke step integrasi nyata, dan step itu gagal tertutup bila secret kosong.
+- Registry: `gemini-3.8-flash` ditandai `freeTierAllowlisted: true`. Dasar: tabel harga resmi Gemini (dibaca 2026-10-09) mencantumkan Free Tier "Free of charge" untuk input dan output. Catatan dari halaman yang sama: pada free tier, "Used to improve our products" = Yes, sehingga input tidak boleh berisi data pengguna nyata. `openai/gpt-oss-20b` (Groq) tetap `false`.
+
+Klasifikasi bukti (wajib dibaca bersama status):
+
+- Tes simulasi: `runner.test.ts` (11 tes) dan `strix.test.ts` (9 tes) memakai biner palsu yang meniru kontrak CLI. Lulus di `npm run check` (commit 583d716). Ini menguji wiring, parser, timeout, pembatalan, dan redaksi. Ini TIDAK membuktikan bahwa Strix memindai apa pun.
+- Integrasi nyata: `strix.real.optin.test.ts` dilewati kecuali `STRIX_REAL_TEST=1`, `STRIX_BIN`, dan `STRIX_GEMINI_API_KEY` terpasang. Belum pernah dijalankan dengan Strix sungguhan.
+- Blocker lingkungan (kondisi per 2026-10-09):
+  1. `workflow_dispatch` mengembalikan HTTP 404 pada branch sesi. GitHub hanya mengenali file workflow dispatch dari branch default (`main`). Menjalankan workflow manual memerlukan file ini di `main`, dan itu butuh otorisasi pemilik.
+  2. Python 3.12 tidak dapat dipasang di sandbox. `uv python install 3.12` gagal karena `github.com` menolak koneksi, dan sandbox hanya memiliki Python 3.11.2.
+  3. Docker tidak tersedia di sandbox.
+  4. Secret `STRIX_GEMINI_API_KEY` tidak dapat dipastikan keberadaannya dari sandbox (`gh secret list` HTTP 403).
+  5. Provider LLM tidak terjangkau dari sandbox (HTTP 000).
+- Batasan yang tersisa: tidak ada bukti Strix nyata. Kompatibilitas `gemini/gemini-3.8-flash` dengan Strix (LiteLLM) belum diuji. Kuota free tier (RPM/TPM/RPD) dapat menyebabkan 429 di tengah run, dan hasilnya akan menjadi ERROR, bukan PASS. Pinning Python dependensi belum memakai hash. Mekanisme forwarder `socat` ke gateway bridge Docker belum diuji.
+
+Status: T-160 tetap EXECUTED (BLOCKED untuk integrasi nyata). Tidak ada klaim VERIFIED.
+
 ---
 
 ## T-170 — Before/after comparison dan remediation proposals
@@ -1212,7 +1235,7 @@ Bukti (sesi 2026-10-09):
 Catatan dan batasan:
 
 - Node 24 sudah EOL menurut nodejs.org (R-NODE-1). Pin belum diganti karena itu keputusan pemilik proyek. README menyatakan ini secara eksplisit.
-- Free tier per model belum diverifikasi (R-AI-3). Semua entri registry bawaan `freeTierAllowlisted: false`, sehingga AI tidak aktif.
+- Free tier per model (R-AI-3): `gemini-3.8-flash` ditandai `freeTierAllowlisted: true` (tabel harga resmi, dibaca 2026-10-09; lihat T-160). `openai/gpt-oss-20b` tetap `false`. Verifikasi per model dan kuota RPM/TPM/RPD tetap wajib sebelum setiap rilis.
 - Tes live Gemini dan Groq belum dijalankan (memerlukan kunci dan opt-in pengguna).
 - Pemeriksaan tautan belum lengkap. Lighthouse configuration docs belum terbaca.
 
@@ -1302,7 +1325,7 @@ Risiko tambahan (T-040 s.d. T-080):
 
 - R-AI-1 — Dua panggilan bersamaan pada batas kuota diatasi dengan reservasi sinkron di memori; reservasi yang belum selesai saat proses mati tidak tercatat di database. Mitigasi: batas harian bersifat konservatif per proses lokal. Status: terbuka (dibatasi aplikasi lokal tunggal).
 - R-AI-2 — Gemini: path `models/{model}:generateContent` dan header `x-goog-api-key` TERKONFIRMASI dari dokumen resmi (2026-10-09). Groq: endpoint dan `max_completion_tokens` terkonfirmasi (2026-10-09). Header Bearer Groq belum terbaca dari halaman yang diambil. Mitigasi: tes live manual opt-in (`AI_LIVE_TESTS=1`) wajib dijalankan sebelum dipakai. Status: terbuka, tes live BELUM DIJALANKAN.
-- R-AI-3 — Kelayakan free tier per model belum diverifikasi; semua entri registry bawaan `freeTierAllowlisted: false`, sehingga FREE_TIER_LOCK=true memblokir semua model sampai registry diubah secara sadar. Status: terbuka (by design).
+- R-AI-3 — Kelayakan free tier per model: `gemini-3.8-flash` sudah diverifikasi dari harga resmi (2026-10-09); `openai/gpt-oss-20b` belum. Entri yang belum diverifikasi tetap `false`, sehingga memblokir model tersebut. Status: sebagian terbuka.
 - R-WEB-1 — Dashboard hanya bind ke loopback dan tidak punya autentikasi. Preview publik sandbox tidak dapat mengakses server tanpa membuka bind non-loopback (ditolak). Mitigasi: `ALLOWED_HOSTS` hanya menambah nama Host; bind tetap loopback. Status: terbuka.
 - R-WEB-2 — Idempotency-Key disimpan di memori proses; restart menghapusnya. Status: terbuka (sesuai keputusan T-050).
 
@@ -1314,7 +1337,7 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-PATCH-1 — Tes setelah patch dan approval hanya di level library. Belum ada UI dan belum ada alur persetujuan yang tersimpan. Status: terbuka.
 
 - R-K6-1 — Toolchain Go (1.27.2) untuk membangun k6 v2.3.0 diambil dari wheel PyPI `go-bin`, pihak ketiga, dan belum diverifikasi terhadap go.dev. Sumber k6 diverifikasi lewat tag dan commit resmi, dan dependensi berasal dari `vendor/` dalam commit tersebut. Mitigasi: skrip `scripts/build-k6-verified.sh` memakai Go yang dipasang pengguna sendiri. Status: terbuka (risiko kepercayaan toolchain, bukan risiko kode).
-- R-STRIX-1 — Strix nyata tidak dapat dijalankan di sandbox: Docker tidak tersedia, dan Strix butuh Python ≥3.12 (tidak tersedia). Tidak ada kunci provider untuk smoke test. Status: terbuka, BLOCKED.
+- R-STRIX-1 — Strix nyata tidak dapat dijalankan di sandbox: Docker tidak tersedia, Python ≥3.12 tidak dapat dipasang, dan kunci provider tidak dapat dipastikan. Workflow manual `strix-integration.yml` belum bisa di-dispatch karena belum ada di `main` (HTTP 404 pada branch sesi). Status: terbuka, BLOCKED. Menunggu: (1) otorisasi merge workflow ke `main`, atau keputusan lain dari pemilik; (2) secret `STRIX_GEMINI_API_KEY`; (3) persetujuan run provider (budget, model, target fixture).
 - R-TEST-3 (DITUTUP) — Urutan hasil modul tidak deterministik: `module_results` diurutkan `created_at, id` dengan `id` acak (UUID), sehingga dua hasil dengan `created_at` yang sama (milidetik) bisa tertukar. Gagal sekali pada CI browser job run `37893146541` (commit `7ae0513`): `expected ['FAIL','PASS'] to equal ['PASS','FAIL']` di `orchestrator.test.ts:242`. Perbaikan: urutan `created_at, rowid` (urutan penyisipan) untuk `module_results`, `findings`, dan `evidence`. Regresi: `storage.test.ts` "urutan hasil modul ... tidak acak" (gagal 3/3 dengan kode lama, lulus dengan perbaikan). Bukti: `packages/orchestrator` dan `packages/storage` lulus 5 kali berulang. Status: ditutup.
 
 - R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal intermiten di CI browser job. Kegagalan pertama tidak terulang dalam 6 run. Kegagalan kedua (run `37893511343`, commit `2bf538a`): `page.waitForFunction` dengan predikat string dievaluasi di halaman, dan CSP dashboard (`script-src 'self'`, tanpa `unsafe-eval`) memblokirnya saat polling. Perbaikan: `waitForStatus` memakai `locator.waitFor` (tanpa evaluasi string di halaman). CSP produksi tidak diubah. Hubungan dengan kegagalan pertama belum dapat dipastikan. Status: diperbaiki, dipantau.
