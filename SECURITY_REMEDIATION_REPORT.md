@@ -188,6 +188,8 @@ Commit `5347f6c` di-push ke `arena/48bd00ed-nusawebbench`. Run CI (push dan pull
 | Tes browser (Chromium Playwright)          | `pin-runtime.test.ts:60` `expected 2 to be 1`: Chromium juga meminta `/favicon.ico` ke host yang dipin                                    | Tes memeriksa dokumen `/` tepat satu kali dan Host asli untuk setiap request. Host lain tetap nol request                | Suite browser seperti CI lulus. pin-runtime 3/3 (3 kali) |
 | Strix integration, job `provision` (netns) | Lihat F-10: harness bergantung pada policy FORWARD ACCEPT. Runner Docker biasanya DROP. Reproduksi lokal menghasilkan kegagalan yang sama | Aturan ACCEPT khusus topologi uji di akhir chain, dihapus oleh cleanup                                                   | Netns lulus pada policy ACCEPT dan DROP. Tidak ada sisa  |
 
+Hasil CI pada `9b8cce1`: CI (push dan pull_request) **success**, termasuk Quality gates dan Tes browser. Strix integration: job `provision` **success**, job `strix-live` **skipped** (tidak ada dispatch).
+
 Catatan: penyebab netns di runner adalah dugaan kuat yang direproduksi, bukan log CI. Konfirmasi final dilakukan dengan run CI berikutnya. Job `strix-live` tetap tidak berjalan (tidak ada dispatch).
 
 ---
