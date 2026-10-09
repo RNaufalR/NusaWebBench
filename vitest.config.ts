@@ -19,6 +19,7 @@ export default defineConfig({
       '@nusawebbench/browser-qa': path.join(root, 'packages/browser-qa/src/index.ts'),
       '@nusawebbench/lighthouse': path.join(root, 'packages/lighthouse/src/index.ts'),
       '@nusawebbench/ux-rules': path.join(root, 'packages/ux-rules/src/index.ts'),
+      '@nusawebbench/ai': path.join(root, 'packages/ai/src/index.ts'),
     },
   },
   test: {

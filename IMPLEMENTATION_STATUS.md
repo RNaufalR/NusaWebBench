@@ -23,9 +23,9 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-080 | Functional QA adapter (Playwright)                | VERIFIED | T-040, T-050, T-060, T-070                      |
 | T-090 | Lighthouse adapter                                | VERIFIED | T-040, T-050, T-060, T-070                      |
 | T-100 | Deterministic UX/accessibility heuristic engine   | VERIFIED | T-020, T-060, T-070, T-080                      |
-| T-110 | Gemini adapter                                    | PLANNED  | T-010, T-020, T-030, T-060                      |
-| T-120 | Groq adapter                                      | PLANNED  | T-010, T-020, T-030, T-060                      |
-| T-130 | AI router, capability registry, free-tier lock    | PLANNED  | T-110, T-120                                    |
+| T-110 | Gemini adapter                                    | VERIFIED | T-010, T-020, T-030, T-060                      |
+| T-120 | Groq adapter                                      | VERIFIED | T-010, T-020, T-030, T-060                      |
+| T-130 | AI router, capability registry, free-tier lock    | VERIFIED | T-110, T-120                                    |
 | T-140 | Dashboard MVP dan API routes                      | PLANNED  | T-030, T-040, T-050, T-060, T-080               |
 | T-150 | k6 adapter dan safety gates                       | PLANNED  | T-040, T-050, T-060, T-070, T-140               |
 | T-160 | Strix adapter                                     | PLANNED  | T-040, T-050, T-060, T-070                      |
@@ -714,6 +714,139 @@ Known limitations:
 - Tidak ada screenshot; evidence berupa snapshot DOM JSON.
 - Lazy-load image yang belum dimuat tidak diperiksa oleh `ux-broken-image`.
 - Teks alt tidak dinilai kualitasnya; daftar heading generik terbatas.
+
+---
+
+## T-110 — Gemini adapter
+
+ID: T-110
+Title: Gemini adapter
+Status: VERIFIED
+Depends on: T-010, T-020, T-030, T-060
+
+Files: `packages/ai/src/providers.ts` (`GeminiClient`), `packages/ai/src/errors.ts`, `packages/ai/src/service.ts`, `packages/ai/tests/providers.test.ts`, `packages/ai/tests/service.test.ts`, `packages/ai/tests/live.optin.test.ts` (opt-in, dilewati).
+
+Verifikasi dokumentasi resmi (diambil 2026-10-09):
+
+- https://ai.google.dev/gemini-api/docs/rate-limits — RPM/TPM/RPD per proyek; kuota reset tengah malam Pacific; 429 `RESOURCE_EXHAUSTED`; spend-based limit untuk tier berbayar. Angka kuota per model TIDAK ditanam di kode.
+- https://ai.google.dev/api/generate-content — hanya daftar isi yang terbaca (chunk 0–2). Path `models/{model}:generateContent` dan header `x-goog-api-key` BELUM dikonfirmasi dari halaman referensi. Ini risiko terbuka (R-AI-2) dan wajib diverifikasi ulang sebelum live test.
+- Nama model pada banner dokumen: `gemini-3.8-flash` (dicatat di registry dengan sumber).
+
+Acceptance criteria dan bukti:
+
+- Adapter lolos fake-based tests: `GeminiClient` dengan fetch palsu, 11 tes di `providers.test.ts` (Gemini bagian).
+- Capability mismatch ditolak: `route` mengembalikan `capability-mismatch` (tes matriks routing) dan permintaan gambar ditolak sebelum HTTP.
+- Invalid key (401/403), 429, timeout: ditangani (AUTH_ERROR tanpa retry; RATE_LIMITED tanpa retry; TIMEOUT retryable).
+- Secret tidak muncul di log/frontend: kunci hanya di header; tes memastikan kunci tidak ada di URL dan tidak ada di tabel usage; status pengaturan tidak memuat nilai kunci (T-180).
+- Core tests tidak membutuhkan AI provider: `AI_PROVIDER=none` default, dan paket core/browser tidak mengimpor `@nusawebbench/ai`.
+
+Negative tests (taskbook §12 T-110):
+
+- missing key → `provider-key-missing` (tes service)
+- blank model → `model-not-configured` (tes service)
+- model tak dikenal (simulasi) → `model-not-allowlisted` dan 404 → `MODEL_UNAVAILABLE` (tes provider)
+- 429 → `RATE_LIMITED` tanpa retry loop (tes service)
+- 5xx → retryable terbatas (tes service: 3 percobaan untuk AI_MAX_RETRIES=2)
+- malformed response → `INVALID_RESPONSE`
+- prompt terlalu panjang → `input-too-long` (sebelum panggilan)
+- image terlalu besar / MIME tidak didukung / terlalu banyak → `image-invalid` (sebelum panggilan)
+- daily limit reached → `local-quota-exhausted`
+- consent absent → `consent-missing`
+
+Audit khusus:
+
+- Semua HTTP call sites: hanya `send()` di `providers.ts`; `fetch` default hanya dipakai bila tidak diganti.
+- Payload redaction: prompt diredaksi dengan `redactText` sebelum dikirim (tes: canary tidak muncul di body). Gambar TIDAK diredaksi (batasan; dicatat).
+- Logging: tidak ada `console.log`/logger di paket AI; pesan error hanya kelas error.
+- Parsing: respons dibatasi 1 MB; teks kosong dan output > 16.000 karakter ditolak; metadata usage rusak → null.
+- Retry bounds: maksimum 3 percobaan (1 + min(AI_MAX_RETRIES, 2)); 429 tidak pernah diulang.
+
+Live test: `packages/ai/tests/live.optin.test.ts` dilewati kecuali `AI_LIVE_TESTS=1`. Tidak dijalankan di sandbox (tidak ada akses jaringan ke Google dan tidak ada kunci) — status: BELUM DIJALANKAN.
+
+---
+
+## T-120 — Groq adapter
+
+ID: T-120
+Title: Groq adapter
+Status: VERIFIED
+Depends on: T-010, T-020, T-030, T-060
+
+Files: `packages/ai/src/providers.ts` (`GroqClient`), `packages/ai/tests/providers.test.ts` (Groq bagian).
+
+Verifikasi dokumentasi resmi (diambil 2026-10-09):
+
+- https://console.groq.com/docs/api-reference — `POST https://api.groq.com/openai/v1/chat/completions`; `max_completion_tokens` (`max_tokens` deprecated); `n` hanya 1; `stream` default false; `response_format` json_object/json_schema tersedia.
+- https://console.groq.com/docs/rate-limits — limit per organisasi; 429 `Too Many Requests`; `retry-after` hanya pada 429; header `x-ratelimit-*` ada pada setiap respons. Tabel angka per model TIDAK ditanam di kode (angka berubah).
+- Header `Authorization: Bearer` mengikuti konvensi OpenAI-compatible; tidak tercantum pada bagian yang diambil. Dicatat sebagai risiko R-AI-2 bersama Gemini.
+
+Acceptance criteria dan bukti:
+
+- Unit tests tidak memakai key nyata: fetch palsu, kunci uji `gsk_TEST`/placeholder.
+- 429 tidak menyebabkan loop: tes service (1 panggilan) dan provider (tanpa retry).
+- Unsupported capabilities tidak dipanggil: `json` dan `image` = false pada registry Groq; tes routing `STRUCTURED_REMEDIATION` untuk groq-only → `capability-mismatch`.
+- Limit lokal ditegakkan saat restart dan antar-route: tes restart (store dibuka ulang) dan tes budget guard terpusat (satu instance `BudgetGuard` per `AiService`).
+- Key tidak bocor: kunci hanya di header, tidak di URL, tidak di tabel usage.
+
+Negative tests:
+
+- 429 dengan dan tanpa Retry-After (tes provider), header invalid (`x-ratelimit-remaining-tokens: banyak` → null)
+- model unavailable (404), auth error (401), malformed JSON, timeout, local limit reached, empty/long response (semua di tes)
+
+Audit khusus: parser rate-limit (header angka valid saja dicatat), jadwal retry (tidak ada retry untuk 429), error mapping (`classifyHttpStatus`), key redaction (kunci tidak pernah dikembalikan).
+
+Live test: sama dengan T-110 (`AI_LIVE_TESTS=1`), BELUM DIJALANKAN.
+
+---
+
+## T-130 — AI router, capability registry, dan free-tier lock
+
+ID: T-130
+Title: AI router, capability registry, dan free-tier lock
+Status: VERIFIED
+Depends on: T-110, T-120
+
+Files: `packages/ai/src/registry.ts`, `packages/ai/src/guard.ts`, `packages/ai/src/service.ts`, `packages/storage/src/repositories.ts` (`countRequestsSince`), `packages/ai/tests/service.test.ts`.
+
+Keputusan:
+
+- Default `AI_PROVIDER=none`; fallback default off (`AI_FALLBACK_ENABLED=false`).
+- Registry model: `freeTierAllowlisted: false` untuk semua entri bawaan karena kelayakan free tier per model belum diverifikasi di sandbox. Akibatnya dengan `FREE_TIER_LOCK=true` (default) tidak ada model yang bisa dipakai sampai pemilik memverifikasi dan mengubah registry. Ini disengaja.
+- Tidak ada fallback ke model tanpa kapabilitas gambar; `VISUAL_REVIEW` selalu `capability-mismatch` dengan registry bawaan (tidak ada model yang terverifikasi gambar).
+- Fallback hanya saat routing (primary tidak tersedia), bukan saat provider gagal di tengah jalan (menghindari panggilan ganda yang tidak terkendali).
+- `FREE_TIER_LOCK=false` dengan AI aktif ditolak oleh `loadConfig` (T-020); tes memakai lock aktif.
+- Budget guard terpusat: `BudgetGuard.reserve` memeriksa dan mencadangkan dalam satu langkah sinkron. Hitungan persisten dari `provider_usage` (bertahan restart) ditambah reservasi memori. Reservasi yang hilang saat crash tidak tercatat (R-AI-3).
+- Bucket kuota lokal = tanggal UTC. Ini penghitung aplikasi, bukan kuota provider.
+- Temuan AI tidak pernah CONFIRMED: `aiFindingVerification` (tes).
+
+Acceptance criteria dan bukti:
+
+- Routing matrix diuji: `route()` untuk empat task × provider (tes "matriks routing" dan "matriks: setiap task").
+- Provider off bekerja: `AI_PROVIDER=none` → `provider-disabled`, tanpa panggilan.
+- Budget enforcement lintas pemanggil: satu `BudgetGuard` per service; semua jalur melalui `AiService.run` (tidak ada pemanggil lain ke provider di repo; diverifikasi lewat grep, lihat audit).
+- Fallback hanya sesuai config: tes fallback dicatat (`fallbackFrom`) hanya saat `AI_FALLBACK_ENABLED=true`.
+- Output tidak memalsukan hasil: `aiFindingVerification`.
+
+Negative tests:
+
+- invalid model config (blank, tak dikenal) — ada
+- model capability mismatch — ada
+- quota exhausted — ada
+- two simultaneous calls at local quota boundary — ada (tepat satu yang mengirim request)
+- provider disabled — ada
+- consent missing — ada
+- invalid usage metadata — ada (token null, jawaban dipakai)
+
+Audit khusus:
+
+- Call sites: satu-satunya pemanggilan `ProviderClient.generate` ada di `AiService.run`. Pemanggilan lain ke `fetch` untuk provider: tidak ada.
+- Bypass path: `testConnection` juga melewati `run`.
+- Race kuota: dibuktikan dengan dua `Promise.all` pada batas kuota.
+- Telemetry accuracy: `estimatedCost` selalu null (tidak ada tabel harga yang diverifikasi); `estimatedTokens` dilabeli estimasi lokal; token provider hanya bila diberikan.
+
+Known limitation: reservasi memori tidak bertahan saat crash; per-run cap juga in-memory (`perRun`).
+
+---
 
 ---
 

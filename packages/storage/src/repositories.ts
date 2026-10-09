@@ -455,6 +455,20 @@ export class ProviderUsageRepository {
     return Number(row['n']);
   }
 
+  /**
+   * Sama dengan countRequests, tetapi hanya baris yang dicatat pada atau setelah `sinceIso`.
+   * Dipakai untuk "reset penghitung lokal": riwayat tetap ada, hanya baseline hitungan yang berubah.
+   */
+  countRequestsSince(provider: Provider, bucket: string, sinceIso: string | null): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(json_extract(data_json, '$.requestCount')), 0) AS n
+         FROM provider_usage
+         WHERE provider = ? AND local_quota_bucket = ? AND (? IS NULL OR recorded_at >= ?)`,
+      )
+      .get(provider, bucket, sinceIso, sinceIso) as Row;
+    return Number(row['n']);
+  }
   list(limit = 100): ProviderUsage[] {
     const rows = this.db
       .prepare(
