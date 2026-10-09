@@ -2,10 +2,10 @@
 
 - Tanggal audit: 2026-10-09 (Asia/Jakarta). Diperbarui setelah verifikasi T-150 (k6 nyata).
 - Branch: `arena/48bd00ed-nusawebbench`
-- Commit yang diaudit: `8bb2115` (clean clone dan uji gerbang). Riwayat perubahan sesi ini ada di bagian Lampiran.
+- Commit yang diaudit: `a6838ee` (clean clone dan uji gerbang, termasuk tes k6 nyata). CI run `37897309673` hijau pada commit ini. Riwayat perubahan sesi ini ada di bagian Lampiran.
 - Node untuk clean clone: v24.21.0 (`.nvmrc`). Sumber: paket npm `node-linux-x64@24.21.0`, tarball resmi Node. Sandbox sesi ini awalnya memakai Node v22.22.3 untuk pemasangan awal; hasil di sini diambil dari Node 24.
 - Chromium untuk tes lokal: Chromium 153 (`@sparticuz/chromium` di luar repo, `/tmp/chromium`). Tes CI memakai Chromium dari Playwright.
-- Bukti CI (sebelum perubahan k6): run `37894195534` pada `8bb2115` (job quality dan browser keduanya success). Run sebelumnya gagal di browser job: `37893146541` (`7ae0513`, flake urutan R-TEST-3) dan `37893511343`/`2bf538a` (UI CSP, R-TEST-2). Keduanya sudah diperbaiki.
+- Bukti CI sebelumnya: run `37894195534` pada `8bb2115` (job quality dan browser keduanya success). Run sebelumnya gagal di browser job: `37893146541` (`7ae0513`, flake urutan R-TEST-3) dan `37893511343`/`2bf538a` (UI CSP, R-TEST-2). Keduanya sudah diperbaiki.
 
 ## Keputusan rilis
 
@@ -116,7 +116,7 @@
 ## Lampiran tambahan: verifikasi T-150 (k6 nyata)
 
 - Binary: k6 v2.3.0, dibangun dari tag `v2.3.0` → commit `e0887846143ab176d4b5483c9d52cf3b3e009f1a` dengan `-mod=vendor`. Toolchain Go 1.27.2 dari PyPI `go-bin` (pihak ketiga, R-K6-1). Digest resmi aset GitHub dicatat sebagai referensi (`39c3117b…`).
-- Hasil: `K6_BIN=… npx vitest run packages/load-k6` → 24 lulus. Gerbang penuh `npm run check` dengan `K6_BIN` → 536 lulus, 1 dilewati (opt-in AI live), secret scan `findings=0`.
+- Hasil: `K6_BIN=… npx vitest run packages/load-k6` → 24 lulus. Gerbang penuh `npm run check` dengan `K6_BIN` → 536 lulus, 1 dilewati (opt-in AI live), secret scan `findings=0` (clean clone `a6838ee`). CI tidak memiliki `K6_BIN`, sehingga tes k6 nyata dilewati di CI dan dijalankan lokal.
 - Perbaikan sesi ini: threshold `abortOnFail` (stop condition nyata), snapshot kondisi test ke hasil modul dan laporan (instruksi 9), hasil pembatalan/timeout menunggu proses keluar.
 - Koreksi: dugaan "proses k6 yatim" pada tes pembatalan nyata berasal dari pendeteksi yang terlalu luas (teks sandbox ikut terhitung). Pendeteksi sekarang mencocokkan executable K6_BIN. Pengukuran langsung: k6 keluar sekitar 0,02 detik setelah SIGTERM.
 - Strix: tidak berubah (BLOCKED). Lihat T-160 di IMPLEMENTATION_STATUS.
