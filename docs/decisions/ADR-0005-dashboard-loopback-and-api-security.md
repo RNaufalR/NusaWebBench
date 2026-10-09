@@ -11,7 +11,7 @@ Dashboard menjalankan audit terhadap target dan menyimpan artefak. Aplikasi dira
 ## Keputusan
 
 1. Server bind hanya ke loopback (`127.0.0.1`, `localhost`, `::1`). Alamat lain ditolak sebelum `listen` (`assertLoopbackBind`).
-2. Header `Host` harus berupa nama loopback (anti DNS rebinding). `ALLOWED_HOSTS` hanya menambah nama Host, bukan alamat bind.
+2. Header `Host` harus berupa nama loopback (anti DNS rebinding). `ALLOWED_HOSTS` hanya menambah nama Host, bukan alamat bind. Jangan isi `ALLOWED_HOSTS` dengan nama yang di-resolve ke alamat publik atau non-loopback: nilai itu membuka DNS rebinding terhadap dashboard (lihat SECURITY_PENTEST_REPORT.md, C4).
 3. Metode yang mengubah state memeriksa `Origin` (harus sama dengan Host) dan menolak `Sec-Fetch-Site: cross-site` tanpa Origin.
 4. Body JSON dibatasi 16 KB, Content-Type wajib `application/json`, skema `strict` menolak field tak dikenal (anti over-posting).
 5. Artefak hanya diakses lewat ID; respons unduhan memakai `attachment`, `nosniff`, dan CSP `sandbox`.

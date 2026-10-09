@@ -18,6 +18,9 @@ const VALUE_PATTERNS: ReadonlyArray<{ kind: string; pattern: RegExp }> = [
   { kind: 'GOOGLE_API_KEY', pattern: /\bAIza[0-9A-Za-z_-]{35}\b/g },
   { kind: 'GROQ_API_KEY', pattern: /\bgsk_[A-Za-z0-9]{40,}\b/g },
   { kind: 'AWS_ACCESS_KEY_ID', pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
+  { kind: 'OPENAI_STYLE_KEY', pattern: /\bsk-(?:proj-|ant-[a-z0-9]+-|or-v1-)[A-Za-z0-9_-]{20,}/g },
+  { kind: 'STRIPE_STYLE_KEY', pattern: /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/g },
+  { kind: 'SLACK_TOKEN', pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g },
   {
     kind: 'GITHUB_TOKEN',
     pattern: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})\b/g,
@@ -50,10 +53,15 @@ export function redactText(input: string): string {
     (_m, name: string) => `${name}: ${REDACTED}`,
   );
   // Pasangan key=value atau key: value atau "key": "value" untuk nama sensitif.
+  // Nilai bertanda kutip dibaca sampai kutip penutup (boleh memuat spasi/koma); nilai tanpa kutip
+  // berhenti di pemisah umum. Sebelumnya `"password": "dua kata"` lolos tanpa redaksi.
   out = out.replace(
-    /(["']?)([A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|private[_-]?key|access[_-]?key)[A-Za-z0-9_.-]*)\1(\s*[:=]\s*)(["']?)([^"'\s&,;}\]]+)\4/gi,
-    (_m, q: string, name: string, sep: string, vq: string) =>
-      `${q}${name}${q}${sep}${vq}${REDACTED}${vq}`,
+    /(["']?)([A-Za-z0-9_.-]*(?:api[_-]?key|token|secret|password|passwd|private[_-]?key|access[_-]?key)[A-Za-z0-9_.-]*)\1(\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s"'&,;}\]]+)/gi,
+    (m, q: string, name: string, sep: string) => {
+      const value = m.slice(name.length + q.length * 2 + sep.length);
+      const quote = value.startsWith('"') ? '"' : value.startsWith("'") ? "'" : '';
+      return `${q}${name}${q}${sep}${quote}${REDACTED}${quote}`;
+    },
   );
   out = out.replace(EMAIL, '[EMAIL]');
   out = out.replace(LONG_DIGITS, '[ID_NUMBER]');

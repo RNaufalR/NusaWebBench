@@ -189,7 +189,7 @@ Files changed:
 - `packages/core/src/schemas.ts` — schema runtime `strictObject` untuk Run, ModuleResult, Finding, Evidence, ProviderUsage, RemediationProposal, serta primitif (origin kanonis, URL aman, path relatif anti-traversal, SHA-256, timestamp ISO UTC milidetik).
 - `packages/core/src/errors.ts` — `AppError` (pesan aman terpisah dari `debugDetail`), `ERROR_CATALOG` (HTTP status + pesan aman), `toSafeError` (error tak dikenal → INTERNAL).
 - `packages/core/src/redact.ts` — `redactText`, `redactUrl`, `containsKnownSecret` (redaksi header, pasangan nama-nilai sensitif, key provider, email, NIK 16 digit, PEM).
-- `packages/core/src/config.ts` — `loadConfig` (validasi env saat startup, default §2.3, variabel kosong = default), `configSnapshot` (secret tidak pernah masuk, hanya flag `*_CONFIGURED`). Bind non-loopback butuh `ALLOW_EXTERNAL_BIND=true` (tambahan keselamatan di luar §2.3).
+- `packages/core/src/config.ts` — `loadConfig` (validasi env saat startup, default §2.3, variabel kosong = default), `configSnapshot` (secret tidak pernah masuk, hanya flag `*_CONFIGURED`). `ALLOW_EXTERNAL_BIND` diterima skema, tetapi `startServer` tetap menolak bind non-loopback (fail-closed, lihat ADR-0005 dan SECURITY_REMEDIATION_REPORT.md). Nilainya tidak mengubah perilaku bind.
 - `packages/core/src/factories.ts` — `createRun`, `createModuleResult`, `createFinding`, `createEvidence`, `createProviderUsage`, `createRemediationProposal`; `parseOrThrow` hanya melaporkan path dan kode issue, tidak nilai input.
 - `packages/core/src/ids.ts` — ID `<prefix>_<32 hex>` dan `nowIso`.
 - `packages/core/src/index.ts`, `packages/core/tests/*.test.ts` (6 file, 91 tes), `packages/core/tests/fixtures.ts` (data sintetis).

@@ -167,7 +167,12 @@ export function createApp(deps: WebDeps) {
       }
     }
 
-    const route = matchRoute(method, path);
+    let route: Route | null;
+    try {
+      route = matchRoute(method, path);
+    } catch (err) {
+      return sendError(res, toHttpError(err));
+    }
     if (!route) {
       const pathExists = routes.some((r) => r.pattern.test(path));
       if (pathExists)
@@ -518,9 +523,16 @@ export function createApp(deps: WebDeps) {
       const m = entry.pattern.exec(path);
       if (!m) continue;
       const params: Record<string, string> = {};
-      entry.keys.forEach((k, i) => {
-        params[k] = decodeURIComponent(m[i + 1] ?? '');
-      });
+      for (let i = 0; i < entry.keys.length; i++) {
+        const key = entry.keys[i];
+        if (key === undefined) continue;
+        try {
+          params[key] = decodeURIComponent(m[i + 1] ?? '');
+        } catch {
+          // Persen-encoding tidak valid (mis. %E0) adalah kesalahan input klien, bukan galat server.
+          throw new HttpError(400, 'VALIDATION_FAILED', 'ID tidak valid.');
+        }
+      }
       return { ...entry.route, params };
     }
     return null;
