@@ -1,5 +1,6 @@
 import { chromium, type Browser, type LaunchOptions } from 'playwright-core';
 import { BROWSER_ARGS, createRouteGuard, type RouteStats } from '@nusawebbench/browser-qa';
+import { browserPinArgs } from '@nusawebbench/core';
 import { checkUrlInScope, type ScopeGrant } from '@nusawebbench/core';
 import { SnapshotSchema, type Snapshot } from './rules.js';
 
@@ -159,11 +160,17 @@ export async function collectSnapshot(opts: CollectOptions): Promise<Snapshot> {
   opts.signal.addEventListener('abort', onAbort, { once: true });
   try {
     if (opts.signal.aborted) throw new CollectError('CANCELLED', false);
+    let pinArgs: string[];
+    try {
+      pinArgs = await browserPinArgs(opts.grant);
+    } catch {
+      throw new CollectError('INVALID', false);
+    }
     try {
       browser = await launcher({
         executablePath: opts.executablePath,
         headless: true,
-        args: [...BROWSER_ARGS],
+        args: [...BROWSER_ARGS, ...pinArgs],
         timeout: opts.timeoutMs,
       });
     } catch {

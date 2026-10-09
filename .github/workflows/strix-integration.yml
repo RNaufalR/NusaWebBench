@@ -84,6 +84,14 @@ jobs:
           echo "$!" > "$RUNNER_TEMP/socat.pid"
           echo "forwarder: ${GW}:${STRIX_FIXTURE_PORT} -> 127.0.0.1:${STRIX_FIXTURE_PORT}"
 
+      - name: Batasi egress container Strix (F-10, fail-closed)
+        if: ${{ inputs.run_scan }}
+        env:
+          STRIX_FIXTURE_PORT: ${{ env.STRIX_FIXTURE_PORT }}
+        run: |
+          # Memakai sudo di dalam skrip. Gagal = run dihentikan sebelum Strix dijalankan.
+          bash scripts/strix-egress-guard.sh
+
       - name: Integrasi Strix nyata (fail-closed bila secret tidak ada)
         if: ${{ inputs.run_scan }}
         timeout-minutes: 45

@@ -52,8 +52,8 @@ describe('FunctionalQaAdapter tanpa browser', () => {
     return {
       runId: 'run_00000000000000000000000000000000',
       moduleResultId: 'module_00000000000000000000000000000000',
-      targetOrigin: 'http://127.0.0.1:1',
-      grant: { origin: 'http://127.0.0.1:1', mode: 'local-fixture' },
+      targetOrigin: 'http://127.0.0.1:4599',
+      grant: { origin: 'http://127.0.0.1:4599', mode: 'local-fixture' },
       signal,
       progress: () => undefined,
     };

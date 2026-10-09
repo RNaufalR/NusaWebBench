@@ -1,7 +1,8 @@
 import {
   checkUrlInScope,
   createFinding,
-  followRedirectsSafely,
+  followRedirectsPinned,
+  browserPinArgs,
   nowIso,
   redactText,
   redactUrl,
@@ -238,11 +239,23 @@ export class FunctionalQaAdapter implements ModuleAdapter {
     const artifactRefs: string[] = [];
 
     try {
+      let pinArgs: string[];
+      try {
+        pinArgs = await browserPinArgs(ctx.grant);
+      } catch {
+        return {
+          status: 'ERROR',
+          errorCode: 'SCOPE_DENIED',
+          errorMessageSafe: 'Target berada di luar cakupan yang diizinkan.',
+          toolName: FUNCTIONAL_QA_TOOL,
+          toolVersion: FUNCTIONAL_QA_TOOL_VERSION,
+        };
+      }
       try {
         browser = await this.launcher({
           ...(this.executablePath !== undefined ? { executablePath: this.executablePath } : {}),
           headless: true,
-          args: [...BROWSER_ARGS],
+          args: [...BROWSER_ARGS, ...pinArgs],
           timeout: config.navigationTimeoutMs * 3,
         });
       } catch (err) {
@@ -372,7 +385,7 @@ export class FunctionalQaAdapter implements ModuleAdapter {
         }
 
         if (!ctx.signal.aborted) {
-          await this.checkLinks(context, pages, config, ctx, observations, metrics);
+          await this.checkLinks(pages, config, ctx, observations, metrics);
         }
 
         for (const flow of config.flows) {
@@ -548,7 +561,6 @@ export class FunctionalQaAdapter implements ModuleAdapter {
   }
 
   private async checkLinks(
-    context: BrowserContext,
     pages: { url: string; hrefs: string[]; evidenceId: string | null }[],
     config: FunctionalQaConfig,
     ctx: ModuleContext,
@@ -567,15 +579,8 @@ export class FunctionalQaAdapter implements ModuleAdapter {
       if (ctx.signal.aborted) return;
       let lastStatus = 0;
       try {
-        const result = await followRedirectsSafely(link, ctx.grant, async (u) => {
-          const res = await context.request.get(u, {
-            maxRedirects: 0,
-            timeout: config.navigationTimeoutMs,
-            failOnStatusCode: false,
-          });
-          lastStatus = res.status();
-          return { status: res.status(), location: res.headers()['location'] ?? null };
-        });
+        const result = await followRedirectsPinned(link, ctx.grant, config.navigationTimeoutMs);
+        if (result.ok) lastStatus = result.status;
         metrics['linksChecked'] = (metrics['linksChecked'] ?? 0) + 1;
         if (!result.ok) {
           metrics['linksRedirectDenied'] = (metrics['linksRedirectDenied'] ?? 0) + 1;

@@ -54,6 +54,9 @@ export const SCREEN_EMULATION = Object.freeze({
   mobile: { mobile: true, width: 412, height: 823, deviceScaleFactor: 1.75, disabled: false },
 });
 
+/** Proxy yang sengaja tidak aktif. Port 1 tidak dipakai layanan apa pun di runner/sandbox. */
+export const LIGHTHOUSE_DEAD_PROXY = 'http://127.0.0.1:1';
+
 export const CHROME_FLAGS = Object.freeze([
   '--headless=new',
   // Diperlukan di lingkungan container/sandbox tanpa user namespace. Lihat risk register (T-090).
@@ -62,6 +65,10 @@ export const CHROME_FLAGS = Object.freeze([
   '--disable-background-networking',
   // Hanya loopback yang dapat di-resolve; host lain gagal sebelum koneksi keluar.
   '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost',
+  // F-06: IP literal tidak melewati host-resolver-rules. Semua koneksi non-loopback diarahkan ke
+  // proxy yang tidak mendengarkan (port 1), sehingga gagal sebelum keluar. Loopback tetap langsung.
+  `--proxy-server=${LIGHTHOUSE_DEAD_PROXY}`,
+  '--proxy-bypass-list=localhost;127.0.0.1;[::1]',
 ]);
 
 /**

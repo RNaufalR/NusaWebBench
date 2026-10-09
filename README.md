@@ -7,7 +7,7 @@ dan provider AI opsional. Core berjalan tanpa API key, tanpa Docker, dan tanpa j
 
 ## Prasyarat
 
-- Node.js 24 (versi yang di-pin di `.nvmrc`, lihat ADR-0002). Diuji dari clean clone dengan Node v24.21.0 (2026-10-09). **Perhatian:** menurut https://nodejs.org/en/about/previous-releases (diperiksa 2026-10-09), Node 24 LTS sudah mencapai akhir masa dukungan pada 2026-09-07. Pin ini belum diperbarui; lihat R-NODE-1 di IMPLEMENTATION_STATUS.md.
+- Node.js 24 (versi yang di-pin di `.nvmrc`, lihat ADR-0002). Diuji dari clean clone dengan Node v24.21.0 (2026-10-09). Menurut https://nodejs.org/en/about/previous-releases (diperiksa 2026-10-09), Node 24 berstatus **LTS** (bukan EOL) dan Node 26 berstatus Current. Klaim EOL sebelumnya keliru (salah membaca kolom "Last updated"). Lihat R-NODE-1 di IMPLEMENTATION_STATUS.md.
 - Chromium untuk modul browser. Dapat dipasang lewat Playwright:
   `npx playwright-core install --with-deps chromium`, lalu atur `CHROMIUM_PATH` ke path executable.
 - Opsional: `k6` (`K6_BIN`), Docker + Strix (tidak dapat diverifikasi di sandbox; lihat batasan).

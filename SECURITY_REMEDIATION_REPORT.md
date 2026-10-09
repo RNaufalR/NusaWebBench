@@ -1,100 +1,133 @@
 # Laporan Remediasi Keamanan — NusaWebBench
 
 Tanggal: 2026-10-09 (Asia/Jakarta). Branch: `arena/48bd00ed-nusawebbench`.
-Dasar: `8570a79`. Temuan lengkap dan status ada di `SECURITY_PENTEST_REPORT.md`.
+Putaran 1: `8570a79` → `e6ed370` (redaksi, error 400, vitest, pin SHA, docs).
+Putaran 2 (dokumen ini): perbaikan F-04 (kontrol repo), F-05, F-06, F-10, dan koreksi F-13.
+Temuan lengkap dan status ada di `SECURITY_PENTEST_REPORT.md`.
 
 ---
 
-## 1. Perubahan
+## 1. Perubahan Putaran 2
 
-| Berkas | Perubahan | Temuan |
-|---|---|---|
-| `packages/core/src/redact.ts` | Nilai bertanda kutip dibaca sampai kutip penutup; pola baru untuk format kunci provider (`sk-or-v1-`, `sk-ant-…`, `sk_live_`/`rk_live_`, `xoxb-`) | F-01, F-02 |
-| `packages/web/src/app.ts` | Decoding parameter rute dibungkus `try` → 400 `VALIDATION_FAILED`; panggilan `matchRoute` ikut dipetakan lewat `sendError` | F-03 |
-| `packages/core/tests/security-redact.test.ts` | **Baru.** 8 tes regresi redaksi (kutip, spasi, koma, kutip tunggal, kontrol negatif, format provider) | F-01, F-02 |
-| `packages/web/tests/security-regression.test.ts` | **Baru.** 5 tes: 400 untuk persen-encoding rusak, 404 untuk ID valid, dan 403 untuk Host asing (dengan dan tanpa port) serta Host yang diizinkan | F-03, guard Host |
-| `package.json` | `vitest`: `4.0.18` → `4.1.11` | F-07 |
-| `package-lock.json` | Subtree vitest diperbarui; `es-module-lexer@2.3.2` bersarang di bawah `vitest`; `std-env@4.3.0` di root | F-07 |
-| `.github/workflows/ci.yml` | Pin SHA untuk `actions/checkout` dan `actions/setup-node` (versi di komentar) | F-08 |
-| `.github/workflows/strix-integration.yml` | Pin SHA untuk `actions/checkout`, `actions/setup-node`, `actions/setup-python`, dan `actions/upload-artifact` | F-08 |
-| `IMPLEMENTATION_STATUS.md` | Koreksi: `ALLOW_EXTERNAL_BIND` tidak mengubah bind (fail-closed) | F-09 |
-| `docs/decisions/ADR-0005-…md` | Peringatan: jangan isi `ALLOWED_HOSTS` dengan nama yang resolve ke alamat publik/non-loopback | F-09 |
-| `SECURITY_PENTEST_REPORT.md` | **Baru.** Laporan temuan dan status | — |
-| `SECURITY_REMEDIATION_REPORT.md` | **Baru.** Dokumen ini | — |
-
-Tidak ada perubahan pada bind address. Dashboard tetap loopback.
-
----
-
-## 2. Bukti Regresi
-
-Tes regresi dijalankan **terhadap kode lama** (dengan `git stash push` hanya untuk `redact.ts` dan `app.ts`, lalu `git stash pop`):
-
-- `security-redact.test.ts` + `security-regression.test.ts`: **8 gagal, 5 lulus** di kode lama.
-  - Gagal: 400 untuk persen-encoding rusak (F-03); JSON password dengan spasi, JSON secret dengan koma, kutip tunggal dengan spasi (F-01); OpenRouter, Anthropic, Stripe-style, dan Slack tanpa nama field (F-02).
-  - Lulus di kode lama (kontrol): 404 untuk ID valid; guard Host (3 tes); nilai tanpa kutip tetap disensor.
-- Setelah perbaikan: **13 dari 13 lulus**.
-
-Kontrol negatif memastikan teks biasa (`Halaman reset password tersedia.`) tidak berubah.
+| Berkas                                                         | Perubahan                                                                                                                                                                                                                                                                 | Temuan           |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `packages/core/src/pinned-http.ts`                             | **Baru.** `pinnedLookup`, `pinnedGet`, `followRedirectsPinned`, `browserPinArgs`                                                                                                                                                                                          | F-05             |
+| `packages/core/src/index.ts`                                   | Ekspor `pinned-http`                                                                                                                                                                                                                                                      | F-05             |
+| `packages/browser-qa/src/functional-qa.ts`                     | `checkLinks` memakai `followRedirectsPinned` (tanpa `APIRequestContext`). Argumen pin sebelum launch. Scope ditolak sebelum browser dibuka                                                                                                                                | F-05             |
+| `packages/ux-rules/src/collect.ts`                             | Argumen pin sebelum launch                                                                                                                                                                                                                                                | F-05             |
+| `packages/lighthouse/src/lighthouse.ts`                        | `--proxy-server=http://127.0.0.1:1` dan `--proxy-bypass-list=localhost;127.0.0.1;[::1]`                                                                                                                                                                                   | F-06             |
+| `scripts/strix-egress-guard.sh`                                | **Baru.** Aturan iptables: DROP forwarding docker0 ke luar; ACCEPT hanya port fixture di INPUT; DROP sisa trafik docker0 ke host. Mode `DRY_RUN=1`                                                                                                                        | F-10             |
+| `.github/workflows/strix-integration.yml`                      | Step `Batasi egress container Strix` sebelum integrasi nyata (hanya bila `run_scan`)                                                                                                                                                                                      | F-10             |
+| `packages/core/tests/pinned-http.test.ts`                      | **Baru.** 10 tes (server loopback sungguhan, tanpa koneksi ke alamat pihak ketiga)                                                                                                                                                                                        | F-05             |
+| `packages/lighthouse/tests/egress-flags.test.ts`               | **Baru.** 3 tes flag                                                                                                                                                                                                                                                      | F-06             |
+| `packages/security-strix/tests/egress-and-workflow.test.ts`    | **Baru.** 9 tes: dry-run egress (urutan aturan, validasi input) dan kebijakan workflow (SHA 40 hex, `contents: read`, tanpa write, strix hanya `workflow_dispatch`, `persist-credentials: false`, secret hanya di satu step bergerbang `run_scan`, `ci.yml` tanpa secret) | F-04, F-08, F-10 |
+| `packages/browser-qa/tests/functional-qa.test.ts`              | Grant tes dari `127.0.0.1:1` ke `127.0.0.1:4599`. Port 1 ditolak scope (`port-not-allowed`). Tes lama sebenarnya menguji grant tidak valid                                                                                                                                | —                |
+| `README.md`, `RELEASE_AUDIT.md`, `IMPLEMENTATION_STATUS.md`    | Koreksi klaim Node EOL. Status F-04 sampai F-13. Bagian remediasi keamanan                                                                                                                                                                                                | F-13             |
+| `SECURITY_PENTEST_REPORT.md`, `SECURITY_REMEDIATION_REPORT.md` | Disinkronkan dengan kondisi kode terkini                                                                                                                                                                                                                                  | —                |
 
 ---
 
-## 3. Hasil Verifikasi Akhir
+## 2. Detail per Temuan
 
-Semua dijalankan dengan Node 24.21.0 (`/tmp/nodepin`), npm 10.9.8.
+### F-04 — PARTIAL (kontrol repo dikunci tes; kontrol remote OPEN)
 
-| Perintah | Hasil |
-|---|---|
-| `npm ci` (setelah perubahan lock) | exit 0, 283 paket. Lock sinkron dengan `package.json`. |
-| `npm audit` (penuh, termasuk dev) | exit 0. **found 0 vulnerabilities** (baseline: 2). |
-| `npm ls vitest` | `vitest@4.1.11` |
-| `npm run check` | exit 0. Format, lint, typecheck, tes, dan secret-scan lulus. |
-| — `Test Files` | 29 lulus, 4 dilewati (33) |
-| — `Tests` | **524 lulus, 39 dilewati (563)**. Baseline: 511 lulus, 39 dilewati (550). Penambahan 13 tes baru. |
-| — `secret-scan` | `scanned=151 findings=0` |
-| `npm run build` | exit 0 |
-| Parse YAML workflow (`js-yaml`) | ci.yml dan strix-integration.yml valid |
+- **Yang dilakukan di repo:** tidak ada perubahan kode baru untuk ini. Kontrol yang sudah ada sekarang dikunci oleh tes (`egress-and-workflow.test.ts`) agar tidak bisa regres diam-diam:
+  - `permissions: contents: read`.
+  - `persist-credentials: false` pada checkout Strix.
+  - `secrets.STRIX_GEMINI_API_KEY` hanya di satu step bergerbang `run_scan`.
+  - `ci.yml` tanpa secret.
+- **Yang sengaja tidak dilakukan:** guard `github.ref` di dalam file workflow tidak dipasang. Alasannya dicatat di SECURITY_PENTEST_REPORT.md bagian F-04.
+- **Yang butuh otorisasi:** GitHub Environment `strix-live` dengan required reviewers dan deployment branch `main`, ruleset atau branch protection, dan pembatasan dispatch. Tidak dieksekusi.
 
-Catatan: `npm run check` gagal sekali selama pengerjaan karena format Prettier dan `no-unused-vars` pada tes baru. Keduanya sudah diperbaiki sebelum hasil akhir di atas.
+### F-05 — FIXED (library), severity Low latent
+
+- **Penyebab:** `checkUrlInScope` me-resolve DNS saat cek. Klien berikutnya me-resolve lagi.
+- **Perbaikan:**
+  - `followRedirectsPinned`: setiap hop dicek scope (satu resolusi), lalu GET ke alamat hasil cek dengan `pinnedLookup`. Tidak ada resolusi ulang.
+  - `browserPinArgs` (mode remote): `--host-resolver-rules=MAP <host> <ip>,MAP * ~NOTFOUND`. IPv6 dalam kurung siku. Mode local-fixture tidak berubah.
+  - Scope ditolak sebelum browser dibuka (`SCOPE_DENIED` di browser-qa, `INVALID` di ux-rules).
+- **Bukti:** `pinned-http.test.ts` lulus (10 tes). Bukti kunci: koneksi ke `pinned-check.invalid` berhasil dengan alamat terpin, sehingga DNS tidak dipakai. `pinnedLookup` tidak memanggil DNS.
+- **Koreksi:** laporan putaran 1 menilai Medium. Jalur API remote untuk modul browser diblokir `buildRunPlan` (`REMOTE_NOT_ENFORCEABLE_MODULES`), sehingga severity diturunkan menjadi Low latent.
+- **Belum terbukti:** perilaku Chrome dengan `MAP host ip` dan IPv6 belum diuji di runtime (BLOCKED).
+- **Perubahan perilaku:** link checker tidak lagi memakai cookie atau sesi browser. Untuk pengecekan status tautan itu tidak diperlukan. Ini perlu dicatat jika link checker nanti butuh halaman yang login.
+
+### F-06 — FIXED (konfigurasi), runtime BLOCKED
+
+- **Perbaikan:** `--proxy-server=http://127.0.0.1:1` dan `--proxy-bypass-list=localhost;127.0.0.1;[::1]`. Koneksi non-loopback (termasuk IP literal) dialihkan ke proxy yang tidak mendengarkan dan gagal sebelum keluar. Loopback langsung.
+- **Batasan:** port 1 diasumsikan tidak dipakai. Jika ada layanan di sana, koneksi bisa ke layanan itu. Ini perlu dicek di runner.
+- **Bukti:** `egress-flags.test.ts` (3 tes). Verifikasi runtime (`Fetch` ke IP literal yang gagal) BLOCKED.
+
+### F-10 — FIXED (skrip dan workflow), runtime BLOCKED
+
+- **Perbaikan:** `scripts/strix-egress-guard.sh`:
+  - `DOCKER-USER`: `-i docker0 ! -o docker0 -j DROP` (forwarding keluar dari container diblokir).
+  - `INPUT`: `-i docker0 -p tcp --dport $PORT -j ACCEPT` di atas `-i docker0 -j DROP`.
+  - Aturan lama dihapus dulu (idempotent). Input port dan nama interface divalidasi. Tanpa `DRY_RUN`, skrip memakai `sudo`.
+- **Urutan di workflow:** dipanggil setelah forwarder socat aktif dan sebelum integrasi nyata. Hanya bila `run_scan=true`.
+- **Batasan yang diketahui:**
+  - DNS dari container diblokir. Sandbox tidak memerlukannya karena `host.docker.internal` ada di `extra_hosts`. Belum diuji dengan Strix nyata.
+  - Agen LLM diasumsikan berjalan di proses host. Ini berdasarkan `session_manager.py` dan `models.py` pada Strix v1.7.0, belum diuji.
+  - Strix dan Docker tidak tersedia di sandbox. Skrip tidak pernah dijalankan dengan iptables sungguhan.
+- **Bukti:** tes dry-run (urutan aturan, port tidak valid ditolak, nama interface berbahaya ditolak). Verifikasi runtime BLOCKED.
+
+### F-13 — WITHDRAWN (koreksi)
+
+- Klaim "Node 24 EOL 2026-09-07" dicabut. Halaman nodejs.org (diambil 2026-10-09) menampilkan Node 24 sebagai LTS, Node 22 sebagai LTS, dan Node 26 sebagai Current. Tanggal 2026-09-07 berasal dari kolom "Last updated". Pin tetap Node 24. Dokumen yang memuat klaim keliru sudah dikoreksi: `README.md`, `RELEASE_AUDIT.md`, `IMPLEMENTATION_STATUS.md`, dan laporan ini.
 
 ---
 
-## 4. Catatan Proses
+## 3. Verifikasi Akhir (kode final putaran 2)
 
-- **Resolusi lock:** npm 10.9.8 crash (`Cannot read properties of null (reading 'edgesOut')`) saat resolve vitest 4.1.11 di repo ini maupun di direktori kosong. Itu bug npm 10 pada peer opsional `@vitest/browser-playwright`. Lock diperbarui dengan cara berikut: subtree vitest di-resolve dengan npm 11 (`npx npm@11`) di `/tmp/vt`, entri vitest-family dan entri transitif yang hilang disalin ke `package-lock.json`, lalu `npm ci` dijalankan untuk membuktikan sinkronisasi. Percobaan `--legacy-peer-deps` dibatalkan karena menghapus banyak entri esbuild.
-- **Reset Git (dilaporkan sesuai aturan):** sebelum audit, branch lokal `arena/48bd00ed-nusawebbench` menunjuk ke `b3cc1a8` dengan hampir semua file untracked. Working tree dibackup ke `/tmp/nwb-worktree-backup-1791543071.tar` dan dibandingkan dengan `git archive origin/arena/48bd00ed-nusawebbench` (identik). Lalu dijalankan `git reset --mixed origin/arena/48bd00ed-nusawebbench` untuk menyamakan branch dengan remote. **Tidak ada `--hard`, `clean`, atau force-checkout.** Tidak ada file pengguna yang hilang.
-- Tidak ada commit ke `main`. Tidak ada merge. Tidak ada force-push.
+| Perintah                                                               | Hasil                                                                |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `npm run lint`                                                         | exit 0 (`--max-warnings=0`)                                          |
+| `npm run typecheck`                                                    | exit 0                                                               |
+| `npm run test`                                                         | **547 lulus, 39 dilewati (586 total)**. Sebelum putaran 2: 524 lulus |
+| `npm run secret-scan`                                                  | `scanned=155 findings=0`                                             |
+| `npm run build`                                                        | exit 0                                                               |
+| `npm audit`                                                            | **0 kerentanan**                                                     |
+| `npm audit --omit=dev`                                                 | **0 kerentanan**                                                     |
+| `DRY_RUN=1 STRIX_FIXTURE_PORT=4600 bash scripts/strix-egress-guard.sh` | exit 0. Aturan sesuai desain                                         |
 
----
+Catatan proses: satu tes lama gagal setelah perubahan karena grant `127.0.0.1:1` ditolak scope. Perbaikannya ada di fixture tes (bagian 1), bukan pelonggaran scope.
 
-## 5. Yang Belum Dikerjakan (OPEN)
-
-Tidak dikerjakan di repo karena alasan yang tercantum:
-
-| ID | Item | Alasan | Langkah berikutnya |
-|---|---|---|---|
-| F-04 | Pembatasan secret Strix (GitHub Environment, required reviewers, deployment branch `main`, ruleset/branch protection, `permissions: contents: read`) | **Perubahan remote dan GitHub configuration butuh otorisasi terpisah.** Guard di dalam file workflow tidak efektif karena workflow dijalankan dari ref yang dipilih. | Pemilik repo memberi persetujuan untuk membuat environment dan rule. |
-| F-05 | Pin koneksi pada link checker browser-qa (anti-rebinding) | Perlu desain ulang: Playwright `request` tidak bisa memakai alamat terperiksa. Butuh `node:http(s)` dengan `lookup` terpin, dan tes dengan server lokal. | Implementasi di sesi berikutnya. |
-| F-06 | Guard request untuk Lighthouse (blokir IP literal non-publik) | Butuh Chromium untuk verifikasi runtime. Tidak tersedia di sandbox. | Verifikasi di lingkungan dengan Chromium, lalu implementasi `Fetch` interception. |
-| F-10 | Batasi egress sandbox Strix | Butuh Docker dan runner terisolasi. Belum bisa diverifikasi. | Atur `STRIX_DOCKER_SANDBOX_NETWORK` ke network internal di runner terisolasi, dengan persetujuan run. |
-| F-11 | Pembersihan Set `started` | Dampak kecil. | Hapus entri setelah run selesai. |
-| F-13 | Upgrade Node | EOL Node 24 menurut nodejs.org (2026-09-07). | Naikkan ke LTS yang didukung, lalu verifikasi `npm ci` dan `npm run check`. |
-
-Eksekusi Strix nyata, provider Gemini/Groq live, dan run GitHub Actions **tidak dijalankan** dan tetap menunggu persetujuan eksplisit dari pengguna.
+Format: `npm run format:check` dijalankan ulang setelah laporan ini ditulis. Lihat catatan di bagian 5.
 
 ---
 
-## 6. Rekomendasi Remote (Perlu Otorisasi Terpisah, Tidak Dieksekusi)
+## 4. Yang Tidak Dijalankan (BLOCKED atau OPEN)
 
-1. **GitHub Environment `strix-live`:** required reviewers, deployment branch policy hanya `main`, pindahkan `STRIX_GEMINI_API_KEY` ke environment itu.
-2. **Ruleset untuk `main`:** wajibkan pull request, status check `quality`, dan batasi push/dispatch.
-3. **Kebijakan Actions repo:** batasi action ke yang diizinkan (GitHub-owned dan SHA yang dipin).
+| ID   | Item                                                                                | Alasan                                                                          | Langkah berikutnya                                                                                             |
+| ---- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| F-04 | Kontrol remote Strix (Environment, ruleset, branch protection, pembatasan dispatch) | Perubahan GitHub butuh otorisasi terpisah. Guard di file workflow tidak efektif | Pemilik repo memberi persetujuan                                                                               |
+| F-05 | Pin Chrome `MAP host ip` dan IPv6 di runtime                                        | Chromium di sandbox hang                                                        | Jalankan tes browser di lingkungan dengan Chromium yang berjalan                                               |
+| F-06 | Runtime egress Lighthouse (`Fetch` ke IP literal gagal cepat)                       | Sama dengan di atas                                                             | Sama                                                                                                           |
+| F-10 | Skrip iptables dan dampaknya pada Strix nyata                                       | Docker dan iptables tidak tersedia. Strix nyata tidak dijalankan                | Jalankan di runner Linux dengan Docker dan persetujuan run. Pastikan DNS container dan sandbox tetap berfungsi |
+| F-11 | Pembersihan Set `started`                                                           | Dampak kecil                                                                    | Hapus entri setelah run selesai                                                                                |
+| —    | Strix nyata, tes live Gemini/Groq, run GitHub Actions                               | Tidak ada persetujuan run dan kunci                                             | Persetujuan eksplisit per run                                                                                  |
+
+Browser nyata: `/tmp/chr` (Chromium dari `@sparticuz/chromium`, di luar repo) memuat binary tetapi hang. Percobaan yang sudah dilakukan: default (zygote crash), `--no-zygote --single-process --headless=shell` (trap GL/ANGLE), dan GL dinonaktifkan (timeout 60 detik tanpa output). Tidak ada percobaan lain yang direncanakan dalam putaran ini.
+
+---
+
+## 5. Catatan Proses
+
+- **Resolusi lock vitest (putaran 1):** npm 10.9.8 crash (`edgesOut`) saat resolve vitest 4.1.11. Subtree di-resolve dengan npm 11 di `/tmp/vt` lalu digabung. `npm ci` membuktikan lock sinkron.
+- **Reset Git (putaran 1, dilaporkan sesuai aturan):** branch lokal semula di `b3cc1a8` dengan file untracked. Working tree dibackup ke `/tmp/nwb-worktree-backup-1791543071.tar`, lalu `git reset --mixed origin/arena/48bd00ed-nusawebbench` dijalankan. Tidak ada `--hard`, `clean`, atau force-checkout.
+- **Tidak ada** push ke `main`, merge, force-push, atau perubahan remote GitHub dalam putaran ini.
+- Berkas sementara di `/tmp` (`/tmp/chr`, `/tmp/vt`, `/tmp/probes`) berada di luar repo.
+
+---
+
+## 6. Rekomendasi Remote (perlu otorisasi terpisah, tidak dieksekusi)
+
+1. **GitHub Environment `strix-live`:** required reviewers, deployment branch policy hanya `main`. Pindahkan `STRIX_GEMINI_API_KEY` ke environment itu.
+2. **Ruleset untuk `main`:** wajibkan pull request dan status check `quality`, batasi push dan dispatch.
+3. **Kebijakan Actions:** batasi ke action GitHub-owned dan SHA yang dipin.
 4. **Akses dispatch:** batasi write access pada repo public ke maintainer tepercaya.
-
-Tidak ada rekomendasi di atas yang sudah dieksekusi.
 
 ---
 
 ## 7. Commit
 
-Perubahan dikomit ke `arena/48bd00ed-nusawebbench` dan didorong ke `origin` pada branch yang sama. Tidak ada push ke branch lain. Hash commit dilaporkan di ringkasan chat.
+Perubahan putaran 2 dikomit ke `arena/48bd00ed-nusawebbench` dan didorong ke `origin` pada branch yang sama. Hash commit dilaporkan di ringkasan chat.

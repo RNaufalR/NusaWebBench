@@ -1227,14 +1227,14 @@ Bukti (sesi 2026-10-09):
   - https://console.groq.com/docs/api-reference: endpoint `POST https://api.groq.com/openai/v1/chat/completions`, `max_completion_tokens`, `n` hanya 1, `stream` default false.
   - https://console.groq.com/docs/rate-limits dan https://console.groq.com/docs/quickstart: rate limit per organisasi, 429, dan `GROQ_API_KEY`. Header Bearer tidak terbaca (contoh curl ada di tab yang tidak terambil).
   - https://playwright.dev/docs/intro: terbuka. Menyebut Node.js 22.x, 24.x, dan 26.x sebagai system requirement.
-  - https://nodejs.org/en/about/previous-releases: Node 24 EOL 2026-09-07 (diperiksa sebelumnya pada sesi ini).
+  - https://nodejs.org/en/about/previous-releases (diperiksa ulang 2026-10-09): Node 24 berstatus LTS, Node 22 LTS, Node 26 Current. Klaim EOL 2026-09-07 sebelumnya KELIRU (membaca kolom "Last updated").
   - https://github.com/usestrix/strix: Apache-2.0, container Docker, default model OpenRouter.
   - https://github.com/GoogleChrome/lighthouse/blob/main/docs/configuration.md: 504 pada percobaan ini. Belum terverifikasi dan perlu dicek ulang.
 - Nama model Gemini di registry (`gemini-3.8-flash`) sesuai banner di halaman rate-limit (2026-10-09). Nama model Groq (`openai/gpt-oss-20b`) sesuai daftar di halaman rate-limit (2026-10-09).
 
 Catatan dan batasan:
 
-- Node 24 sudah EOL menurut nodejs.org (R-NODE-1). Pin belum diganti karena itu keputusan pemilik proyek. README menyatakan ini secara eksplisit.
+- Node 24 berstatus LTS menurut nodejs.org (R-NODE-1, dikoreksi 2026-10-09), bukan EOL. Pin tetap 24. README sudah dikoreksi.
 - Free tier per model (R-AI-3): `gemini-3.8-flash` ditandai `freeTierAllowlisted: true` (tabel harga resmi, dibaca 2026-10-09; lihat T-160). `openai/gpt-oss-20b` tetap `false`. Verifikasi per model dan kuota RPM/TPM/RPD tetap wajib sebelum setiap rilis.
 - Tes live Gemini dan Groq belum dijalankan (memerlukan kunci dan opt-in pengguna).
 - Pemeriksaan tautan belum lengkap. Lighthouse configuration docs belum terbaca.
@@ -1281,7 +1281,7 @@ Alasan status EXECUTED (bukan VERIFIED):
 - Taskbook membolehkan pengecualian hanya untuk modul opsional yang "secara eksplisit ditunda". Keputusan itu ada di tangan pemilik proyek, bukan agen. Dua pilihan:
   1. Pemilik menetapkan Strix sebagai modul opsional yang ditunda untuk rilis ini. Dengan itu T-230 dapat dinyatakan VERIFIED, dan T-160 tetap tercatat BLOCKED dengan alasan di atas.
   2. Tunggu bukti nyata Strix (Docker, Python ≥3.12, kunci provider). T-230 tetap EXECUTED.
-- Keputusan pin Node (R-NODE-1) juga masih terbuka dan tidak mengubah status T-230 secara langsung.
+- Klaim EOL Node 24 pada catatan sebelumnya keliru (dikoreksi 2026-10-09; Node 24 LTS). R-NODE-1 dipantau dan tidak mengubah status T-230.
 
 ---
 
@@ -1318,7 +1318,7 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-BQA-1 — Chromium untuk verifikasi lokal berasal dari paket npm pihak ketiga; bukan build resmi Playwright. Mitigasi: job `browser-tests` di CI memasang Chromium resmi lewat `playwright-core` dan gagal bila tidak tersedia. Status: sebagian; terbukti hanya setelah run CI berhasil.
 - R-BQA-2 — Screenshot tidak diredaksi pada level piksel (`redactionApplied: false`). Status: terbuka untuk target non-sintetis.
 - R-BQA-3 — Pemindaian `RISKY_CLICK_PATTERN` berbasis substring; dapat menolak label aman (mis. "display"). Trade-off konservatif yang disengaja.
-- R-LH-1 — Lighthouse tanpa route guard; pembatasan jaringan hanya lewat `--host-resolver-rules` Chrome. `--no-sandbox` diperlukan di container dan memperlemah isolasi Chrome. Mitigasi: flag resolver, mode remote + Lighthouse diblokir `buildRunPlan` (T-040). Status: terbuka.
+- R-LH-1 — Lighthouse tanpa route guard; pembatasan jaringan hanya lewat `--host-resolver-rules` Chrome. `--no-sandbox` diperlukan di container dan memperlemah isolasi Chrome. Mitigasi: flag resolver, mode remote + Lighthouse diblokir `buildRunPlan` (T-040). Update 2026-10-09 (F-06): IP literal ditangani dengan `--proxy-server=http://127.0.0.1:1` dan bypass loopback (lihat bagian Remediasi keamanan). Verifikasi runtime BLOCKED (Chromium tidak berjalan di sandbox). Status: sebagian, terbuka sampai runtime dibuktikan.
 - R-FIX-1 — `security-lab` sengaja tidak meng-escape `q`; hanya untuk uji lokal dengan banner peringatan, tidak boleh di-deploy. Mitigasi: server bind 127.0.0.1.
 
 ---
@@ -1329,7 +1329,7 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-WEB-1 — Dashboard hanya bind ke loopback dan tidak punya autentikasi. Preview publik sandbox tidak dapat mengakses server tanpa membuka bind non-loopback (ditolak). Mitigasi: `ALLOWED_HOSTS` hanya menambah nama Host; bind tetap loopback. Status: terbuka.
 - R-WEB-2 — Idempotency-Key disimpan di memori proses; restart menghapusnya. Status: terbuka (sesuai keputusan T-050).
 
-- R-NODE-1 — `.nvmrc` dan `engines` memakai Node 24. Diverifikasi ulang pada 2026-10-09: clean clone dengan Node v24.21.0 lulus `npm ci`, `npm run check`, `npm run build`, dan smoke dashboard. Menurut nodejs.org (diperiksa 2026-10-09), Node 24 LTS mencapai akhir dukungan pada 2026-09-07 dan Node 26 adalah rilis Current. Memperbarui pin mengubah seluruh toolchain (Playwright, tes, native `node:sqlite`) sehingga perlu verifikasi ulang penuh. Status: terbuka, perlu keputusan pemilik proyek (ADR-0002 perlu direvisi).
+- R-NODE-1 — `.nvmrc` dan `engines` memakai Node 24. Diverifikasi ulang pada 2026-10-09: clean clone dengan Node v24.21.0 lulus `npm ci`, `npm run check`, `npm run build`, dan smoke dashboard. Menurut nodejs.org (diperiksa 2026-10-09), Node 24 berstatus LTS (BUKAN EOL; klaim EOL 2026-09-07 sebelumnya keliru) dan Node 26 berstatus Current. Memperbarui pin mengubah seluruh toolchain (Playwright, tes, native `node:sqlite`) sehingga perlu verifikasi ulang penuh. Status: dipantau, bukan blocker rilis. Upgrade mengikuti jadwal LTS resmi dan memerlukan revisi ADR-0002.
 
 - R-TEST-1 — (DITUTUP) Kegagalan intermiten `buildReport` ("Data yang dikirim tidak valid"). Akar masalah: pola redaksi `LONG_DIGITS` (16 digit berurutan) menyensor bagian ID hex acak; ~0,19% ID terpengaruh (diukur 500.000 sampel), sehingga laporan gagal secara acak. Ini bug produk, bukan hanya tes. Diperbaiki di `packages/core/src/redact.ts` (batas huruf/digit) dengan tes regresi 40.000 ID acak di `packages/core/tests/redact.test.ts`. Status: ditutup, bukti: CI job quality/browser.
 
@@ -1341,6 +1341,39 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-TEST-3 (DITUTUP) — Urutan hasil modul tidak deterministik: `module_results` diurutkan `created_at, id` dengan `id` acak (UUID), sehingga dua hasil dengan `created_at` yang sama (milidetik) bisa tertukar. Gagal sekali pada CI browser job run `37893146541` (commit `7ae0513`): `expected ['FAIL','PASS'] to equal ['PASS','FAIL']` di `orchestrator.test.ts:242`. Perbaikan: urutan `created_at, rowid` (urutan penyisipan) untuk `module_results`, `findings`, dan `evidence`. Regresi: `storage.test.ts` "urutan hasil modul ... tidak acak" (gagal 3/3 dengan kode lama, lulus dengan perbaikan). Bukti: `packages/orchestrator` dan `packages/storage` lulus 5 kali berulang. Status: ditutup.
 
 - R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal intermiten di CI browser job. Kegagalan pertama tidak terulang dalam 6 run. Kegagalan kedua (run `37893511343`, commit `2bf538a`): `page.waitForFunction` dengan predikat string dievaluasi di halaman, dan CSP dashboard (`script-src 'self'`, tanpa `unsafe-eval`) memblokirnya saat polling. Perbaikan: `waitForStatus` memakai `locator.waitFor` (tanpa evaluasi string di halaman). CSP produksi tidak diubah. Hubungan dengan kegagalan pertama belum dapat dipastikan. Status: diperbaiki, dipantau.
+
+## Remediasi keamanan audit (2026-10-09)
+
+Sumber: `SECURITY_PENTEST_REPORT.md` dan `SECURITY_REMEDIATION_REPORT.md`. Status per temuan:
+
+| ID   | Temuan                                                     | Status                                                                                      | Perubahan                                                                                                                                                                    | Bukti                                                       |
+| ---- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| F-04 | Secret Strix bisa dipakai dari ref yang di-dispatch        | PARTIAL: kontrol repo terpasang, kontrol remote OPEN                                        | Tes kebijakan workflow (`permissions: contents: read`, `persist-credentials: false`, secret hanya di satu step bergerbang `run_scan`, `ci.yml` tanpa secret)                 | `packages/security-strix/tests/egress-and-workflow.test.ts` |
+| F-05 | Link checker: DNS rebinding antara cek scope dan koneksi   | Diperbaiki (library). Dampak produk: rendah, jalur API diblokir `buildRunPlan` untuk remote | Link checker memakai `followRedirectsPinned` (koneksi ke alamat hasil cek). Browser remote memakai `browserPinArgs` (`--host-resolver-rules` pin + NOTFOUND untuk host lain) | `packages/core/tests/pinned-http.test.ts`                   |
+| F-06 | Lighthouse: IP literal tidak dibatasi oleh resolver Chrome | Diperbaiki (konfigurasi), runtime BLOCKED                                                   | `--proxy-server=http://127.0.0.1:1` dan `--proxy-bypass-list=localhost;127.0.0.1;[::1]`                                                                                      | `packages/lighthouse/tests/egress-flags.test.ts`            |
+| F-10 | Egress sandbox Strix tidak dibatasi                        | Diperbaiki (skrip + workflow), runtime BLOCKED                                              | `scripts/strix-egress-guard.sh`: DROP forwarding docker0 ke luar, ACCEPT hanya port fixture di INPUT. Dipanggil di workflow sebelum integrasi nyata                          | Tes dry-run skrip (urutan aturan, validasi input)           |
+| F-13 | Klaim Node 24 EOL                                          | DIKOREKSI: salah. Node 24 LTS                                                               | README, RELEASE_AUDIT, IMPLEMENTATION_STATUS dikoreksi                                                                                                                       | nodejs.org/en/about/previous-releases (2026-10-09)          |
+
+Perubahan kode terkait:
+
+- `packages/core/src/pinned-http.ts` (baru): `pinnedLookup`, `pinnedGet`, `followRedirectsPinned`, `browserPinArgs`. Diekspor dari `@nusawebbench/core`.
+- `packages/browser-qa/src/functional-qa.ts`: `checkLinks` tanpa `APIRequestContext`. Argumen pin ditambahkan sebelum launch. Scope ditolak sebelum browser dibuka (`SCOPE_DENIED`).
+- `packages/ux-rules/src/collect.ts`: argumen pin sebelum launch. Scope ditolak sebagai `INVALID`.
+- `packages/lighthouse/src/lighthouse.ts`: flag proxy mati.
+- `packages/browser-qa/tests/functional-qa.test.ts`: grant tes diganti dari port 1 ke 4599. Port 1 tidak diizinkan scope (`port-not-allowed`), jadi tes lama sebenarnya menguji grant yang tidak valid.
+
+Verifikasi:
+
+- `npm run lint` (exit 0), `npm run typecheck` (exit 0), `npm run test` (547 lulus, 39 dilewati, 586 total), `npm run secret-scan` (`scanned=155 findings=0`), `npm run build` (exit 0).
+- Tes baru: `pinned-http` (10), `egress-and-workflow` (10), `egress-flags` (3).
+
+Runtime yang BLOCKED di sandbox ini:
+
+- Chromium: `@sparticuz/chromium` 153 diunduh dari npm ke `/tmp/chr` (di luar repo). Binary termuat dan memulai proses, tetapi zygote crash, lalu `--dump-dom` habis waktu (exit 124). Percobaan dengan `--no-zygote`, `--single-process`, `--headless=shell`, dan GL dinonaktifkan tidak menghasilkan output dalam 60 detik. Akibatnya tes browser nyata dan verifikasi runtime F-05/F-06 tidak bisa dijalankan.
+- Docker dan iptables: skrip egress hanya diuji dalam mode dry-run.
+- Strix nyata: tetap BLOCKED (lihat R-STRIX-1).
+
+Tidak dieksekusi (perlu otorisasi terpisah): GitHub Environment, ruleset, branch protection, dan run workflow Strix.
 
 ## Log task lainnya
 

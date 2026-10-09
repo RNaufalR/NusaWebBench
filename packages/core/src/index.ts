@@ -6,3 +6,4 @@ export * from './schemas.js';
 export * from './factories.js';
 export * from './config.js';
 export * from './scope.js';
+export * from './pinned-http.js';

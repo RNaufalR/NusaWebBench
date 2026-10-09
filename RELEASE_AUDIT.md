@@ -12,8 +12,35 @@
 **BELUM siap rilis penuh.** Gerbang wajib lulus pada clean clone. Namun tiga hal memerlukan keputusan pemilik proyek sebelum rilis:
 
 1. **Cakupan Strix**: k6 sudah diverifikasi dengan binary nyata (v2.3.0, dibangun dari sumber tag resmi). Strix tetap BLOCKED: Docker tidak tersedia, Strix membutuhkan Python ≥3.12 (sandbox hanya 3.11), dan tidak ada kunci provider untuk smoke test. Pilihan pemilik: (a) menetapkan Strix sebagai modul opsional yang ditunda secara eksplisit untuk rilis ini, sehingga T-160 tetap BLOCKED dan T-230 dapat VERIFIED; atau (b) menunggu bukti Strix nyata, sehingga T-230 tetap EXECUTED.
-2. **Pin Node (R-NODE-1)**: Node 24 sudah EOL menurut nodejs.org (2026-09-07). Pin belum diganti karena memerlukan revisi ADR-0002 dan verifikasi ulang toolchain.
+2. **Pin Node (R-NODE-1)**: Node 24 berstatus LTS menurut nodejs.org (diperiksa 2026-10-09), bukan EOL. Klaim EOL pada rilis sebelumnya keliru. Pin tetap Node 24 dan tidak perlu diganti sekarang. Node 26 berstatus Current. Keputusan upgrade mengikuti jadwal LTS resmi dan memerlukan revisi ADR-0002.
 3. **AI live**: tes live Gemini dan Groq belum dijalankan (kunci dan opt-in pengguna belum tersedia). Endpoint dan header Gemini sudah terkonfirmasi dari dokumen. Header Bearer Groq belum.
+
+## Remediasi keamanan 2026-10-09 (status terkini)
+
+Sumber rinci: `SECURITY_PENTEST_REPORT.md` dan `SECURITY_REMEDIATION_REPORT.md`. Catatan koreksi:
+
+- **Node 24 bukan EOL.** Klaim sebelumnya (EOL 2026-09-07) keliru. Halaman nodejs.org (diperiksa 2026-10-09) menampilkan Node 24 sebagai LTS. Klaim itu dihapus dari bagian keputusan rilis, gap, dan risiko.
+- **F-05 (link checker) dikurangi:** jalur browser untuk target remote sudah diblokir `buildRunPlan`, sehingga celah rebinding hanya terbuka lewat pemakaian library langsung. Perbaikan tetap dilakukan.
+- **Chromium di sandbox tidak lagi tersedia** di path `/tmp/chromium` yang disebut di bagian sebelumnya. Binary dari `@sparticuz/chromium` di `/tmp/chr` hang saat dijalankan. Tes browser nyata tidak bisa dijalankan ulang di sandbox ini.
+
+| Gerbang     | Perintah              | Hasil (2026-10-09)                                                                 |
+| ----------- | --------------------- | ---------------------------------------------------------------------------------- |
+| Lint        | `npm run lint`        | PASS (exit 0)                                                                      |
+| Typecheck   | `npm run typecheck`   | PASS (exit 0)                                                                      |
+| Tes         | `npm run test`        | PASS: 547 lulus, 39 dilewati (586). Browser nyata dilewati (tanpa `CHROMIUM_PATH`) |
+| Secret scan | `npm run secret-scan` | PASS: `scanned=155 findings=0`                                                     |
+| Build       | `npm run build`       | PASS (exit 0)                                                                      |
+| Audit penuh | `npm audit`           | PASS: 0 kerentanan (lihat SECURITY_REMEDIATION_REPORT.md)                          |
+
+Status keamanan:
+
+- F-04 PARTIAL: kontrol repo (least privilege, tanpa credential persisten, secret hanya di satu step bergerbang `run_scan`) sudah dikunci oleh tes. Kontrol remote (GitHub Environment, ruleset, branch protection) OPEN dan butuh otorisasi.
+- F-05 DIPERBAIKI (library): koneksi link checker dan pin browser remote. Runtime BLOCKED.
+- F-06 DIPERBAIKI (konfigurasi): proxy mati untuk non-loopback. Runtime BLOCKED.
+- F-10 DIPERBAIKI (skrip dan workflow): egress container Strix dibatasi di runner. Runtime BLOCKED (Docker/iptables tidak tersedia).
+- F-13 DIKOREKSI: Node 24 LTS, bukan EOL.
+
+Strix nyata, tes live Gemini/Groq, dan run workflow tetap tidak dijalankan dan membutuhkan persetujuan eksplisit.
 
 ## Checklist gerbang
 
@@ -66,7 +93,7 @@
 ## Gap yang terbuka (wajib dipertimbangkan sebelum rilis)
 
 1. **Strix nyata** (T-160): BLOCKED. Perlu keputusan cakupan (lihat Keputusan rilis). k6 nyata sudah terbukti pada v2.3.0. Versi k6 lain belum diuji.
-2. **Node 24 EOL** (R-NODE-1): perlu keputusan pin, lalu verifikasi ulang toolchain.
+2. **Node 24 LTS** (R-NODE-1): bukan EOL (koreksi 2026-10-09). Pantau jadwal LTS resmi; upgrade memerlukan verifikasi ulang toolchain.
 3. **Tes live Gemini dan Groq** belum dijalankan (R-AI-2). Endpoint Gemini dan Groq sudah terkonfirmasi. Header Bearer Groq belum.
 4. **Kelayakan free tier per model** belum diverifikasi (R-AI-3). AI tetap tidak aktif sampai registry diubah secara sadar.
 5. **Dashboard tanpa autentikasi, loopback only** (R-WEB-1).
@@ -76,8 +103,8 @@
 
 ## Risiko terbuka (register)
 
-- R-LH-1 (Medium): Lighthouse tanpa route guard. Sandbox Chrome default aktif. `--no-sandbox` opt-in (`NWB_CHROME_NO_SANDBOX=1`), dipakai CI browser job.
-- R-NODE-1 (Perlu keputusan): Node 24 EOL. Clean clone pada Node 24.21.0 lulus gerbang.
+- R-LH-1 (Medium, dikurangi sebagian): Lighthouse tanpa route guard. Sekarang semua koneksi non-loopback dialihkan ke proxy mati (F-06, `--proxy-server=http://127.0.0.1:1`). Runtime belum diverifikasi (Chromium hang di sandbox). Sandbox Chrome default aktif. `--no-sandbox` opt-in (`NWB_CHROME_NO_SANDBOX=1`), dipakai CI browser job.
+- R-NODE-1 (Dipantau): Node 24 LTS (bukan EOL, dikoreksi 2026-10-09). Clean clone pada Node 24.21.0 lulus gerbang.
 - R-AI-1, R-AI-2 (sebagian terkonfirmasi), R-AI-3, R-WEB-1, R-WEB-2: lihat `IMPLEMENTATION_STATUS.md`.
 - R-RET-1 (baru): retensi hanya library; `.tmp-*` yatim belum dibersihkan.
 - R-PATCH-1 (baru): tes setelah patch dan approval hanya library; belum ada UI atau alur persetujuan tersimpan.
