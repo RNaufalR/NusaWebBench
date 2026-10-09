@@ -32,10 +32,14 @@ export const MODEL_REGISTRY: readonly ModelEntry[] = Object.freeze([
     provider: 'gemini',
     model: 'gemini-3.8-flash',
     capabilities: { text: true, json: false, image: false },
-    freeTierAllowlisted: false,
+    // Free tier dibuktikan dari tabel harga resmi (dibaca 2026-10-09): "Free Tier — Free of charge"
+    // untuk input dan output gemini-3.8-flash. Catatan: pada free tier, "Used to improve our
+    // products" = Yes; data yang dikirim ke model ini tidak boleh berisi data pengguna nyata.
+    // Batas RPM/TPM/RPD tetap berlaku (lihat rate-limits) dan tidak diverifikasi di sini.
+    freeTierAllowlisted: true,
     verifiedOn: AI_REGISTRY_VERIFIED_ON,
     source:
-      'https://ai.google.dev/gemini-api/docs/rate-limits (nama model pada banner, 2026-10-09)',
+      'https://ai.google.dev/gemini-api/docs/pricing (Gemini 3.8 Flash, Free Tier, dibaca 2026-10-09)',
   },
   {
     provider: 'groq',

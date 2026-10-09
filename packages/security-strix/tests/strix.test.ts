@@ -1,10 +1,11 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createScopeGrant } from '@nusawebbench/core';
+import { createScopeGrant, newId } from '@nusawebbench/core';
 import type { ModuleContext } from '@nusawebbench/orchestrator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { StrixAdapter, parseStrixConfig } from '../src/index.js';
+import type { ModelEntry } from '@nusawebbench/ai';
+import { StrixAdapter, parseStrixConfig, parseStrixVersion } from '../src/index.js';
 
 let dir: string;
 beforeEach(() => {
@@ -14,12 +15,12 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 const LOCAL = createScopeGrant('http://127.0.0.1:4600', 'local-fixture');
 const REMOTE = createScopeGrant('https://contoh.example', 'remote');
-const ctx = (grant = LOCAL): ModuleContext => ({
-  runId: 'run_0123456789abcdef0123456789abcdef',
-  moduleResultId: 'module_0123456789abcdef0123456789abcdef',
+const ctx = (grant = LOCAL, signal = new AbortController().signal): ModuleContext => ({
+  runId: newId('run'),
+  moduleResultId: newId('module'),
   targetOrigin: grant.origin,
   grant,
-  signal: new AbortController().signal,
+  signal,
   progress: () => undefined,
 });
 
@@ -39,10 +40,7 @@ describe('Strix: gerbang sebelum apa pun dijalankan', () => {
   it('default nonaktif: SKIPPED strix-disabled', async () => {
     expect(
       await new StrixAdapter({ dockerBin: fakeDocker(true), providerKeys: KEYS }).run(ctx()),
-    ).toMatchObject({
-      status: 'SKIPPED',
-      skippedReason: 'strix-disabled',
-    });
+    ).toMatchObject({ status: 'SKIPPED', skippedReason: 'strix-disabled' });
     expect(parseStrixConfig({}).enabled).toBe(false);
   });
 
@@ -82,7 +80,7 @@ describe('Strix: gerbang sebelum apa pun dijalankan', () => {
     expect(out).toMatchObject({ skippedReason: 'provider-key-missing' });
   });
 
-  it('model tak dikenal, berbayar (belum free-tier), atau tanpa kapabilitas teks → ditolak', async () => {
+  it('model tak dikenal, belum free-tier, atau tanpa kapabilitas teks → ditolak', async () => {
     const base = { enabled: true, dockerBin: fakeDocker(true), providerKeys: KEYS };
     expect(
       (
@@ -91,15 +89,29 @@ describe('Strix: gerbang sebelum apa pun dijalankan', () => {
         )
       ).skippedReason,
     ).toBe('model-not-allowlisted');
-    expect(
-      (await new StrixAdapter({ ...base, config: { enabled: true } }).run(ctx())).skippedReason,
-    ).toBe('free-tier-not-verified');
-    const textless = [
+    const unverified: ModelEntry[] = [
       {
         provider: 'gemini' as const,
         model: 'gemini-3.8-flash',
-        capabilities: { text: false, json: false, image: false },
+        capabilities: { text: true, json: false, image: false },
+        freeTierAllowlisted: false,
+        verifiedOn: '2026-10-09',
+        source: 'uji',
+      },
+    ];
+    expect(
+      (
+        await new StrixAdapter({ ...base, config: { enabled: true }, registry: unverified }).run(
+          ctx(),
+        )
+      ).skippedReason,
+    ).toBe('free-tier-not-verified');
+    const textless: ModelEntry[] = [
+      {
+        provider: 'gemini',
+        model: 'gemini-3.8-flash',
         freeTierAllowlisted: true,
+        capabilities: { text: false, json: false, image: false },
         verifiedOn: '2026-10-09',
         source: 'uji',
       },
@@ -113,30 +125,26 @@ describe('Strix: gerbang sebelum apa pun dijalankan', () => {
     ).toBe('capability-mismatch');
   });
 
-  it('semua gerbang lolos → tetap UNAVAILABLE karena runner belum terverifikasi (tidak ada pemindaian)', async () => {
-    const allowed = [
-      {
-        provider: 'gemini' as const,
-        model: 'gemini-3.8-flash',
-        capabilities: { text: true, json: false, image: false },
-        freeTierAllowlisted: true,
-        verifiedOn: '2026-10-09',
-        source: 'uji',
-      },
-    ];
+  it('model gemini-3.8-flash (free-tier terverifikasi) lolos gerbang; tanpa STRIX_BIN → UNAVAILABLE', async () => {
     const out = await new StrixAdapter({
       config: { enabled: true },
       dockerBin: fakeDocker(true),
       providerKeys: KEYS,
-      registry: allowed,
     }).run(ctx());
-    expect(out.status).toBe('UNAVAILABLE');
-    expect(out.skippedReason).toBe('strix-runner-contract-unverified');
+    expect(out).toMatchObject({ status: 'UNAVAILABLE', skippedReason: 'strix-bin-not-configured' });
     expect(out.findings).toBeUndefined();
   });
 
-  it('konfigurasi di luar batas (runtime > 600 detik, provider tak dikenal) ditolak', () => {
+  it('konfigurasi di luar batas ditolak', () => {
     expect(() => parseStrixConfig({ maxRuntimeSec: 601 })).toThrow();
     expect(() => parseStrixConfig({ provider: 'openrouter' })).toThrow();
+    expect(() => parseStrixConfig({ maxBudgetUsd: 6 })).toThrow();
+    expect(() => parseStrixConfig({ scanMode: 'everything' })).toThrow();
+  });
+
+  it('parseStrixVersion membaca format `strix <versi>` saja', () => {
+    expect(parseStrixVersion('strix 1.7.0\n')).toBe('1.7.0');
+    expect(parseStrixVersion('strix unknown')).toBeNull();
+    expect(parseStrixVersion('')).toBeNull();
   });
 });
