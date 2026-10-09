@@ -1,11 +1,21 @@
-name: Strix integration (manual)
+name: Strix integration (manual + PR tanpa secret)
 
-# Workflow MANUAL terisolasi untuk SECURITY_STRIX (taskbook T-160). Tidak berjalan pada push/PR.
-# - run_scan=false (default): hanya provisioning (Python 3.12, Docker, Strix terpin) dan tes
-#   simulasi. TIDAK memanggil provider LLM dan TIDAK menghasilkan bukti pemindaian.
-# - run_scan=true: menjalankan Strix nyata terhadap fixture lokal `security-lab` (127.0.0.1).
-#   Memanggil provider berbayar/free-tier. Gagal tertutup bila secret tidak tersedia.
-# Secret hanya dimasukkan ke step yang membutuhkannya. Tidak ada secret di job provisioning.
+# Workflow untuk SECURITY_STRIX (taskbook T-160, F-04, F-10).
+#
+# Dua job dengan batas kepercayaan berbeda:
+#
+# 1. provision (TANPA secret): Strix terpin, tes simulasi, dan uji netns egress guard.
+#    Berjalan pada workflow_dispatch dan pull_request. Tidak memanggil provider LLM dan TIDAK
+#    menghasilkan bukti pemindaian. Tidak ada akses ke secret.
+#
+# 2. strix-live (DENGAN secret): hanya pada workflow_dispatch, run_scan=true, dan ref main.
+#    Memakai `environment: strix-live`. Secret diambil dari environment itu, bukan dari repository.
+#    Batasan: `if` di file ini TIDAK melindungi sendirian, karena file diambil dari ref yang
+#    di-dispatch. Penegakan yang sebenarnya ada di environment (required reviewers, deployment
+#    branch policy = main, larangan self-review). Lihat SECURITY_REMEDIATION_REPORT.md.
+#
+# Gagal tertutup: bila secret kosong, bila egress guard tidak terverifikasi, atau bila tes gagal,
+# job berhenti sebelum Strix menerima kredensial.
 
 on:
   workflow_dispatch:
@@ -14,6 +24,7 @@ on:
         description: 'Jalankan pemindaian Strix nyata (memanggil provider LLM). Default: tidak.'
         type: boolean
         default: false
+  pull_request:
 
 permissions:
   contents: read
@@ -23,10 +34,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  strix:
-    name: Strix ${{ inputs.run_scan && 'integrasi nyata' || 'provisioning + simulasi' }}
+  provision:
+    name: Provisioning + simulasi + uji egress (tanpa secret)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     env:
       STRIX_FIXTURE_PORT: '4600'
     steps:
@@ -72,9 +83,59 @@ jobs:
       - name: Tes simulasi (biner palsu; BUKAN bukti pemindaian)
         run: npx vitest run packages/security-strix/tests/strix.test.ts packages/security-strix/tests/runner.test.ts --reporter=verbose
 
-      - name: Siapkan forwarder fixture ke gateway bridge Docker
-        if: ${{ inputs.run_scan }}
+      - name: Tes kebijakan egress dan workflow (dry-run)
+        run: npx vitest run packages/security-strix/tests/egress-and-workflow.test.ts --reporter=verbose
+
+      - name: Uji runtime egress guard di network namespace (wajib, tanpa skip)
+        env:
+          NWB_NETNS_TESTS: '1'
+          REQUIRE_NETNS_TESTS: '1'
+        run: npx vitest run packages/security-strix/tests/egress-netns.test.ts --reporter=verbose
+
+  strix-live:
+    name: Strix integrasi nyata (environment strix-live)
+    needs: provision
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_scan && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: strix-live
+    env:
+      STRIX_FIXTURE_PORT: '4600'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Pasang Strix v1.7.0 terpin (venv terisolasi)
+        timeout-minutes: 15
         run: |
+          python -m venv "$RUNNER_TEMP/strix-venv"
+          "$RUNNER_TEMP/strix-venv/bin/python" -m pip install --disable-pip-version-check --no-input "strix-agent==1.7.0"
+          echo "STRIX_BIN=$RUNNER_TEMP/strix-venv/bin/strix" >> "$GITHUB_ENV"
+          VERSION_OUT="$("$RUNNER_TEMP/strix-venv/bin/strix" -v)"
+          test "$VERSION_OUT" = "strix 1.7.0"
+
+      - name: Periksa Docker dan unduh image sandbox Strix
+        timeout-minutes: 15
+        run: |
+          docker info --format 'docker server {{.ServerVersion}}'
+          docker pull ghcr.io/usestrix/strix-sandbox:1.3.0
+
+      - name: Install dependensi repositori
+        run: npm ci --no-audit --no-fund
+
+      - name: Siapkan forwarder fixture ke gateway bridge Docker
+        run: |
+          sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends socat >/dev/null
           GW="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')"
           test -n "$GW"
@@ -84,16 +145,12 @@ jobs:
           echo "$!" > "$RUNNER_TEMP/socat.pid"
           echo "forwarder: ${GW}:${STRIX_FIXTURE_PORT} -> 127.0.0.1:${STRIX_FIXTURE_PORT}"
 
-      - name: Batasi egress container Strix (F-10, fail-closed)
-        if: ${{ inputs.run_scan }}
-        env:
-          STRIX_FIXTURE_PORT: ${{ env.STRIX_FIXTURE_PORT }}
+      - name: Pasang egress guard (fail-closed, sebelum Strix)
         run: |
-          # Memakai sudo di dalam skrip. Gagal = run dihentikan sebelum Strix dijalankan.
-          bash scripts/strix-egress-guard.sh
+          # apply memverifikasi aturan IPv4 dan IPv6; gagal = job berhenti tanpa secret yang dipakai.
+          bash scripts/strix-egress-guard.sh apply
 
       - name: Integrasi Strix nyata (fail-closed bila secret tidak ada)
-        if: ${{ inputs.run_scan }}
         timeout-minutes: 45
         env:
           STRIX_REAL_TEST: '1'
@@ -101,33 +158,38 @@ jobs:
           STRIX_REAL_REPORT: ${{ runner.temp }}/strix-real/summary.json
         run: |
           if [ -z "$STRIX_GEMINI_API_KEY" ]; then
-            echo "::error::Secret STRIX_GEMINI_API_KEY tidak tersedia. Run dihentikan; tidak ada fallback."
+            echo "::error::Secret STRIX_GEMINI_API_KEY tidak tersedia di environment strix-live. Run dihentikan; tidak ada fallback."
             exit 1
           fi
           echo "::add-mask::$STRIX_GEMINI_API_KEY"
           npx vitest run packages/security-strix/tests/strix.real.optin.test.ts --reporter=verbose
 
+      - name: Hapus egress guard (selalu)
+        if: ${{ always() }}
+        run: bash scripts/strix-egress-guard.sh teardown
+
       - name: Ringkasan hasil ke job summary
-        if: always()
+        if: ${{ always() }}
         run: |
           {
-            echo "## Strix integration"
-            echo "- Mode: $([ '${{ inputs.run_scan }}' = 'true' ] && echo 'integrasi nyata (provider dipanggil)' || echo 'provisioning + simulasi (TIDAK ada pemindaian nyata)')"
+            echo "## Strix integration (integrasi nyata)"
             echo "- Strix terpin: 1.7.0, sandbox: ghcr.io/usestrix/strix-sandbox:1.3.0"
             if [ -f "$RUNNER_TEMP/strix-real/summary.json" ]; then
               echo '```json'
               cat "$RUNNER_TEMP/strix-real/summary.json"
               echo '```'
+            else
+              echo "Tidak ada ringkasan: pemindaian tidak menghasilkan artefak."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Hentikan forwarder
-        if: ${{ always() && inputs.run_scan }}
+        if: ${{ always() }}
         run: |
           if [ -f "$RUNNER_TEMP/socat.pid" ]; then kill "$(cat "$RUNNER_TEMP/socat.pid")" 2>/dev/null || true; fi
 
       - name: Unggah ringkasan (tanpa kunci)
-        if: ${{ always() && inputs.run_scan }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: strix-real-summary

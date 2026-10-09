@@ -9,14 +9,16 @@ import {
 import type { ModuleAdapter, ModuleContext, ModuleOutcome } from '@nusawebbench/orchestrator';
 import type { ArtifactStore } from '@nusawebbench/storage';
 import { z } from 'zod';
+import { startEgressProxy } from './egress-proxy.js';
 
 /**
  * Adapter Lighthouse (taskbook T-090).
  *
  * - Lighthouse dipanggil lewat API Node `lighthouse(url, flags)` dengan Chrome dari `chrome-launcher`.
  * - Argumen Chrome disusun sebagai array terstruktur. Tidak ada string shell.
- * - Chrome hanya boleh me-resolve loopback (`--host-resolver-rules`); Lighthouse tidak memiliki route
- *   guard seperti FUNCTIONAL_QA, sehingga pembatasan jaringan dilakukan di level Chrome.
+ * - Egress dibatasi dua lapis: `--host-resolver-rules` (nama host) dan proxy allowlist per run
+ *   (`egress-proxy.ts`) yang meneruskan HANYA origin target. Semua request, termasuk loopback, lewat proxy.
+ *   Lighthouse tidak memiliki route guard seperti FUNCTIONAL_QA.
  * - Output divalidasi ukuran dan skemanya sebelum dibaca. Skor yang tidak ada tidak pernah dicatat 0.
  * - Status modul menyatakan keberhasilan eksekusi dan validasi, BUKAN ambang skor.
  */
@@ -54,31 +56,36 @@ export const SCREEN_EMULATION = Object.freeze({
   mobile: { mobile: true, width: 412, height: 823, deviceScaleFactor: 1.75, disabled: false },
 });
 
-/** Proxy yang sengaja tidak aktif. Port 1 tidak dipakai layanan apa pun di runner/sandbox. */
-export const LIGHTHOUSE_DEAD_PROXY = 'http://127.0.0.1:1';
-
-export const CHROME_FLAGS = Object.freeze([
+/**
+ * Flag dasar Chrome untuk Lighthouse. Egress dibatasi oleh proxy allowlist per run (lihat
+ * `egress-proxy.ts`). Flag proxy dan bypass ditambahkan oleh `chromeFlagsFromEnv`.
+ */
+export const CHROME_BASE_FLAGS = Object.freeze([
   '--headless=new',
   // Diperlukan di lingkungan container/sandbox tanpa user namespace. Lihat risk register (T-090).
   '--disable-gpu',
   '--disable-dev-shm-usage',
   '--disable-background-networking',
-  // Hanya loopback yang dapat di-resolve; host lain gagal sebelum koneksi keluar.
+  // Hanya loopback yang dapat di-resolve oleh Chrome; host lain gagal sebelum koneksi keluar.
   '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost',
-  // F-06: IP literal tidak melewati host-resolver-rules. Semua koneksi non-loopback diarahkan ke
-  // proxy yang tidak mendengarkan (port 1), sehingga gagal sebelum keluar. Loopback tetap langsung.
-  `--proxy-server=${LIGHTHOUSE_DEAD_PROXY}`,
-  '--proxy-bypass-list=localhost;127.0.0.1;[::1]',
 ]);
+
+/**
+ * Flag proxy: SEMUA request (termasuk loopback) harus lewat `proxyUrl`. `<-loopback>` mematikan
+ * bypass loopback implisit Chrome. Konfigurasi bypass eksplisit `localhost;127.0.0.1;[::1]` terbukti
+ * meloloskan request ke server loopback lain (F-06, dibuktikan dengan Chromium nyata).
+ */
+export function proxyFlags(proxyUrl: string): string[] {
+  return [`--proxy-server=${proxyUrl}`, '--proxy-bypass-list=<-loopback>'];
+}
 
 /**
  * Flag tambahan dari environment. `--no-sandbox` HANYA ditambahkan bila NWB_CHROME_NO_SANDBOX=1
  * (diperlukan di sebagian container). Default tetap sandbox Chrome aktif (R-LH-1).
  */
-export function chromeFlagsFromEnv(env: NodeJS.ProcessEnv): string[] {
-  return env['NWB_CHROME_NO_SANDBOX'] === '1'
-    ? [...CHROME_FLAGS, '--no-sandbox']
-    : [...CHROME_FLAGS];
+export function chromeFlagsFromEnv(env: NodeJS.ProcessEnv, proxyUrl: string): string[] {
+  const flags = [...CHROME_BASE_FLAGS, ...proxyFlags(proxyUrl)];
+  return env['NWB_CHROME_NO_SANDBOX'] === '1' ? [...flags, '--no-sandbox'] : flags;
 }
 
 export type LighthouseRunInput = {
@@ -93,12 +100,39 @@ export type LighthouseRunInput = {
 export type LighthouseRunner = (input: LighthouseRunInput) => Promise<unknown>;
 
 /** Runner default: Chrome dari chrome-launcher, Lighthouse dari paket resmi. Selalu menutup Chrome. */
-export const defaultLighthouseRunner: LighthouseRunner = async (input) => {
+/** Hasil run beserta bukti egress: target yang ditolak proxy (host:port saja, tanpa path/query). */
+export type LighthouseEgressRun = { readonly lhr: unknown; readonly denied: readonly string[] };
+
+/**
+ * F-06: menjalankan Lighthouse dengan proxy allowlist per run. Hanya origin target yang diteruskan;
+ * request ke origin lain ditolak di proxy dan dicatat di `denied`.
+ */
+export async function runLighthouseWithEgress(
+  input: LighthouseRunInput,
+): Promise<LighthouseEgressRun> {
   const { launch } = await import('chrome-launcher');
   const { default: lighthouse } = await import('lighthouse');
+  const proxy = await startEgressProxy([input.url]);
+  try {
+    const lhr = await runWithProxy(input, proxy.proxyUrl, launch, lighthouse);
+    return { lhr, denied: proxy.denied() };
+  } finally {
+    await proxy.close();
+  }
+}
+
+export const defaultLighthouseRunner: LighthouseRunner = async (input) =>
+  (await runLighthouseWithEgress(input)).lhr;
+
+async function runWithProxy(
+  input: LighthouseRunInput,
+  proxyUrl: string,
+  launch: typeof import('chrome-launcher').launch,
+  lighthouse: typeof import('lighthouse').default,
+): Promise<unknown> {
   const chrome = await launch({
     chromePath: input.chromePath,
-    chromeFlags: chromeFlagsFromEnv(process.env),
+    chromeFlags: chromeFlagsFromEnv(process.env, proxyUrl),
   });
   // Pembatalan atau timeout mematikan Chrome; Lighthouse lalu gagal dan runner membersihkan proses.
   const onAbort = (): void => {
@@ -123,7 +157,7 @@ export const defaultLighthouseRunner: LighthouseRunner = async (input) => {
     input.signal.removeEventListener('abort', onAbort);
     await Promise.resolve(chrome.kill()).catch(() => undefined);
   }
-};
+}
 
 const ScoreSchema = z.number().finite().min(0).max(1).nullable();
 

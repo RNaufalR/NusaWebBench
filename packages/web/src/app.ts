@@ -22,6 +22,7 @@ import {
   sendStatic,
   SECURITY_HEADERS,
 } from './http.js';
+import { StartTracker } from './start-tracker.js';
 
 export const MODULE_LABELS: Readonly<Partial<Record<ModuleName, string>>> = Object.freeze({
   FUNCTIONAL_QA: 'QA fungsional (Chromium)',
@@ -140,8 +141,8 @@ function toHttpError(err: unknown): HttpError {
 
 export function createApp(deps: WebDeps) {
   const now = deps.now ?? (() => new Date());
-  /** Run yang sudah dijadwalkan di proses ini. Mencegah start ganda dari retry/double-submit. */
-  const started = new Set<string>();
+  /** Start yang masih tertunda. Mencegah start ganda dari retry/double-submit (F-11: entri dibersihkan). */
+  const starts = new StartTracker();
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const method = req.method ?? 'GET';
@@ -328,10 +329,7 @@ export function createApp(deps: WebDeps) {
       ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
     });
     // Eksekusi berjalan di latar belakang; satu run aktif, sisanya menunggu di QUEUED.
-    if (!started.has(run.id)) {
-      started.add(run.id);
-      deps.orchestrator.start(run.id).catch(() => undefined);
-    }
+    starts.startOnce(run.id, () => deps.orchestrator.start(run.id));
     return { kind: 'json', status: 202, body: runJson(run.id) };
   });
 
