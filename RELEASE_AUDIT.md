@@ -95,11 +95,13 @@
 - Penulisan patch sebagian gagal tidak dipetakan ke error terstruktur. Sekarang TOOL_FAILED dengan rollback (`91df536`).
 - Kebocoran direktori sementara pada `storage.test.ts`. Sekarang dibersihkan (`afterEach`).
 - Urutan hasil modul tidak deterministik (`ORDER BY created_at, id` dengan id acak). Gagal sekali di CI browser job (run `37893146541`). Diperbaiki dengan urutan `rowid` dan tes regresi (R-TEST-3).
+- Tes UI keyboard gagal di CI browser job (run `2bf538a`): `waitForFunction` dengan predikat string diblokir CSP `script-src 'self'`. Diganti `locator.waitFor`; CSP produksi tidak diubah (R-TEST-2).
 
 ## Lampiran: perubahan sesi lanjutan (2026-10-09)
 
 - `91df536`: tes setelah patch (`runPostPatchChecks`), baseline (`runChecksAtBase`), record proposal (`buildProposalRecord`), retensi (`previewRetention`/`applyRetention`), `listCreatedBefore`, dan tes negatif baru.
 - `7ae0513`: refactor `runChecksIn`, pembersihan temp di `storage.test.ts`, dan pembaruan dokumentasi (README, IMPLEMENTATION_STATUS, RELEASE_AUDIT).
+- Perbaikan tes UI (R-TEST-2) setelah `62e3a44`: lihat IMPLEMENTATION_STATUS.
 - `62e3a44`: urutan deterministik (`created_at, rowid`) untuk module_results, findings, dan evidence, dengan tes regresi. Perbaikan flake CI.
 
 ## Langkah berikutnya yang disarankan

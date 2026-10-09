@@ -7,9 +7,18 @@ import { BROWSER_ARGS } from '@nusawebbench/browser-qa';
 import { RunOrchestrator } from '@nusawebbench/orchestrator';
 import { AiService, AiSettingsService } from '@nusawebbench/ai';
 import { ArtifactStore, Store } from '@nusawebbench/storage';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp, startServer } from '../src/index.js';
+
+/**
+ * Menunggu teks status tanpa `waitForFunction` berbasis string. Predikat string dievaluasi di halaman
+ * dan CSP dashboard (`script-src 'self'`, tanpa 'unsafe-eval') memblokirnya saat polling (R-TEST-2).
+ * Locator Playwright tidak memakai evaluasi string di halaman.
+ */
+async function waitForStatus(page: Page, text: string): Promise<void> {
+  await page.locator('#status').filter({ hasText: text }).waitFor({ timeout: 15_000 });
+}
 
 const BROWSER = process.env['CHROMIUM_PATH'];
 const REQUIRE = process.env['REQUIRE_BROWSER_TESTS'] === '1';
@@ -62,11 +71,7 @@ real('dashboard di Chromium nyata', () => {
       if (m.type() === 'error') errors.push(`console: ${m.text()}`);
     });
     await page.goto(base + '/', { waitUntil: 'load' });
-    await page.waitForFunction(
-      "document.getElementById('status') && document.getElementById('status').textContent === 'Siap.'",
-      null,
-      { timeout: 15_000 },
-    );
+    await waitForStatus(page, 'Siap.');
     expect(errors).toEqual([]);
     await page.close();
   }, 60_000);
@@ -74,11 +79,7 @@ real('dashboard di Chromium nyata', () => {
   it('navigasi keyboard: Tab pertama mencapai tautan lewati, lalu form target dapat diisi dan dikirim', async () => {
     const page = await browser.newPage();
     await page.goto(base + '/', { waitUntil: 'load' });
-    await page.waitForFunction(
-      "document.getElementById('status') && document.getElementById('status').textContent === 'Siap.'",
-      null,
-      { timeout: 15_000 },
-    );
+    await waitForStatus(page, 'Siap.');
     await page.keyboard.press('Tab');
     const first = await page.evaluate(
       "document.activeElement ? document.activeElement.className : ''",
@@ -87,11 +88,7 @@ real('dashboard di Chromium nyata', () => {
     await page.getByLabel('Nama').fill('<b>Uji UI</b>');
     await page.getByLabel('Origin').fill('http://127.0.0.1:9999');
     await page.getByRole('button', { name: 'Tambah target' }).click();
-    await page.waitForFunction(
-      "document.getElementById('status') && document.getElementById('status').textContent === 'Target ditambahkan.'",
-      null,
-      { timeout: 15_000 },
-    );
+    await waitForStatus(page, 'Target ditambahkan.');
     // Markup dari data harus tampil sebagai teks, bukan elemen HTML.
     const literal = await page.locator('#targets td').first().textContent();
     expect(literal).toBe('<b>Uji UI</b>');

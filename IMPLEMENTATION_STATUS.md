@@ -1270,7 +1270,7 @@ Risiko tambahan (T-040 s.d. T-080):
 
 - R-TEST-3 (DITUTUP) — Urutan hasil modul tidak deterministik: `module_results` diurutkan `created_at, id` dengan `id` acak (UUID), sehingga dua hasil dengan `created_at` yang sama (milidetik) bisa tertukar. Gagal sekali pada CI browser job run `37893146541` (commit `7ae0513`): `expected ['FAIL','PASS'] to equal ['PASS','FAIL']` di `orchestrator.test.ts:242`. Perbaikan: urutan `created_at, rowid` (urutan penyisipan) untuk `module_results`, `findings`, dan `evidence`. Regresi: `storage.test.ts` "urutan hasil modul ... tidak acak" (gagal 3/3 dengan kode lama, lulus dengan perbaikan). Bukti: `packages/orchestrator` dan `packages/storage` lulus 5 kali berulang. Status: ditutup.
 
-- R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal satu kali saat paket web dijalankan paralel; tidak terulang dalam 6 run berikutnya. Penyebab belum diketahui. Status: terbuka (flaky, dipantau).
+- R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal intermiten di CI browser job. Kegagalan pertama tidak terulang dalam 6 run. Kegagalan kedua (run `37893511343`, commit `2bf538a`): `page.waitForFunction` dengan predikat string dievaluasi di halaman, dan CSP dashboard (`script-src 'self'`, tanpa `unsafe-eval`) memblokirnya saat polling. Perbaikan: `waitForStatus` memakai `locator.waitFor` (tanpa evaluasi string di halaman). CSP produksi tidak diubah. Hubungan dengan kegagalan pertama belum dapat dipastikan. Status: diperbaiki, dipantau.
 
 ## Log task lainnya
 
