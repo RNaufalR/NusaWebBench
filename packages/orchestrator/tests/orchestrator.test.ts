@@ -492,7 +492,24 @@ describe('restart dan shutdown', () => {
     expect(o.recoverInterruptedRuns()).toBe(1);
     const after = store.runs.get(run.id);
     expect(after?.status).toBe('FAILED');
-    expect(after?.errorSummary).toBeNull();
+    expect(after?.errorSummary).toBe('interrupted-by-restart');
+  });
+
+  it('shutdown melewati grace period → run RUNNING ditandai FAILED (shutdown-grace-exceeded)', async () => {
+    const o = orchestrator([adapter('UX_RULES', () => PASS)]);
+    const run = newRun(o, ['UX_RULES']);
+    store.runs.transition(run.id, 'RUNNING', {
+      expectedVersion: 0,
+      at: new Date().toISOString(),
+      reason: 'simulated-stuck',
+      patch: { startedAt: new Date().toISOString() },
+    });
+    // Simulasi antrean macet (proses yang tidak pernah selesai). Abort tidak dapat menyelesaikannya.
+    (o as unknown as { queue: Promise<void> }).queue = new Promise<void>(() => undefined);
+    await o.shutdown(10);
+    const after = store.runs.get(run.id);
+    expect(after?.status).toBe('FAILED');
+    expect(after?.errorSummary).toBe('shutdown-grace-exceeded');
   });
 
   it('shutdown menghentikan run aktif dan mencatat CANCELLED', async () => {

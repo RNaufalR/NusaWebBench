@@ -13,13 +13,13 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | ID    | Judul                                             | Status   | Depends on                                      |
 | ----- | ------------------------------------------------- | -------- | ----------------------------------------------- |
 | T-000 | Repository discovery dan baseline audit           | VERIFIED | —                                               |
-| T-010 | Bootstrap, workspace, dan quality gates           | PLANNED  | T-000                                           |
-| T-020 | Domain schemas dan error taxonomy                 | PLANNED  | T-010                                           |
-| T-030 | SQLite storage, migration, repository layer       | PLANNED  | T-020                                           |
-| T-040 | Target registry dan authorization/scope guard     | EXECUTED | T-020, T-030                                    |
-| T-050 | Run orchestrator dan state machine                | EXECUTED | T-020, T-030, T-040                             |
-| T-060 | Evidence/artifact store dan reporting core        | EXECUTED | T-020, T-030, T-050                             |
-| T-070 | Target fixture suite dan ground truth             | EXECUTED | T-010, T-020                                    |
+| T-010 | Bootstrap, workspace, dan quality gates           | VERIFIED | T-000                                           |
+| T-020 | Domain schemas dan error taxonomy                 | VERIFIED | T-010                                           |
+| T-030 | SQLite storage, migration, repository layer       | VERIFIED | T-020                                           |
+| T-040 | Target registry dan authorization/scope guard     | VERIFIED | T-020, T-030                                    |
+| T-050 | Run orchestrator dan state machine                | VERIFIED | T-020, T-030, T-040                             |
+| T-060 | Evidence/artifact store dan reporting core        | VERIFIED | T-020, T-030, T-050                             |
+| T-070 | Target fixture suite dan ground truth             | VERIFIED | T-010, T-020                                    |
 | T-080 | Functional QA adapter (Playwright)                | VERIFIED | T-040, T-050, T-060, T-070                      |
 | T-090 | Lighthouse adapter                                | PLANNED  | T-040, T-050, T-060, T-070                      |
 | T-100 | Deterministic UX/accessibility heuristic engine   | PLANNED  | T-020, T-060, T-070, T-080                      |
@@ -37,7 +37,7 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-220 | CI, release checks, artifact validation           | PLANNED  | seluruh task rilis                              |
 | T-230 | Final acceptance audit dan release handoff        | PLANNED  | T-000 s.d. T-220                                |
 
-Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED`: T-000, T-080. `EXECUTED`: T-040, T-050, T-060, T-070. Sisanya `PLANNED`.
+Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED`: T-000 s.d. T-080 (9 task). Sisanya (T-090 s.d. T-230) `PLANNED`. Tidak ada task yang `EXECUTED` atau `BLOCKED` saat ini.
 
 ---
 
@@ -314,27 +314,42 @@ Next action: T-040 (target registry dan scope guard).
 
 ID: T-040
 Title: Target registry dan authorization/scope guard
-Status: EXECUTED (implementasi dan tes ada; audit baris penuh belum selesai — lihat "Line-by-line audit")
+Status: VERIFIED
 Depends on: T-020, T-030
 
-Files changed: `packages/core/src/scope.ts`, `packages/core/tests/scope.test.ts`, `packages/core/src/index.ts`, `packages/core/src/schemas.ts` (tipe `Authorization`), `packages/orchestrator/src/plan.ts`.
+Files changed (baru): `packages/core/src/scope.ts` (434 baris), `packages/core/tests/scope.test.ts` (334 baris, 25 tes), `packages/orchestrator/src/plan.ts` (92 baris).
+Files changed (diubah): `packages/core/src/index.ts` (ekspor scope), `packages/core/src/schemas.ts` (`AuthorizationSchema`, `OriginSchema`).
 
-Acceptance criteria (ringkas): remote dan local-fixture dibedakan; origin dengan path/query/userinfo ditolak; loopback/private/link-local/metadata ditolak untuk remote; redirect setiap hop diperiksa ulang; DNS tidak boleh menghasilkan alamat terlarang.
+Acceptance criteria dan bukti:
 
-Commands actually run: `npx vitest run` (seluruh suite) — lihat bagian Test results di T-080.
+- Origin harus kanonis (tanpa path, query, userinfo, atau fragment): `createScopeGrant` melempar `SCOPE_DENIED` bila origin tidak persis sama dengan bentuk kanonisnya; userinfo ditolak (`credentials-not-allowed`). Tes: "menerima HTTP(S)...", "origin spoofing dengan suffix...".
+- Mode remote menolak alamat loopback, private, link-local, metadata, dan reserved, termasuk bentuk IPv4-mapped, NAT64, dan 6to4 (dibaca di `classifyIPv6`). Tes: klasifikasi IP dan "menolak IP literal privat...".
+- DNS rebinding (hostname publik yang resolve ke privat) ditolak; DNS gagal/kosong ditolak tanpa membocorkan detail. Tes: "DNS rebinding...", "DNS gagal atau kosong...".
+- Port selain 80/443 ditolak pada remote. Tes: "port yang tidak diizinkan ditolak pada remote".
+- Mode local-fixture hanya loopback; `localhost` yang resolve ke non-loopback ditolak. Tes: grup "mode local-fixture".
+- Setiap hop redirect diperiksa ulang; redirect keluar origin, redirect ke metadata, loop, Location kosong, dan skema `file:` ditolak. Tes: grup "redirect" (7 tes).
+- Remote + modul browser/eksternal (`FUNCTIONAL_QA`, `LIGHTHOUSE`, `LOAD_K6`, `SECURITY_STRIX`) ditolak oleh `buildRunPlan` karena DNS pinning belum dapat dijamin. Tes: `orchestrator.test.ts` "remote dengan modul browser ditolak sebelum run".
 
-Test results: `packages/core/tests/scope.test.ts` lulus sebagai bagian dari suite penuh (329 tes dengan browser; 311 lulus + 18 dilewati tanpa browser).
+Commands actually run: `npx vitest run` (seluruh suite) — hasil di T-080 dan bagian "Verifikasi terakhir" di bawah.
 
-Line-by-line audit: BELUM SELESAI. `scope.ts` dibaca pada bagian awal (konstanta, klasifikasi IP, `checkUrlInScope`, `followRedirectsSafely`). Pembacaan penuh bagian canonicalize/DNS belum tercatat.
+Test results: seluruh tes scope lulus (bagian dari 331 tes dengan browser; 313 lulus + 18 dilewati tanpa browser).
 
-Security review: keputusan kunci — remote + modul browser/eksternal diblokir oleh `buildRunPlan` karena DNS pinning belum bisa dijamin (lihat R-SCOPE-1). Local-fixture hanya loopback.
+Line-by-line audit (sesi ini):
+
+- `scope.ts` dibaca seluruhnya (434 baris). Tidak ada cacat keamanan yang ditemukan. Setiap jalur yang diperiksa menutup dengan penolakan (fail closed): IP tidak valid dianggap `reserved`, `addressesAllowed` mensyaratkan SEMUA alamat publik, dan `followRedirectsSafely` memeriksa ulang setiap hop.
+- `plan.ts` dibaca seluruhnya (92 baris). Konsisten dengan keputusan T-040 dan `authorizationFor` menolak consent kosong (`CONSENT_REQUIRED`).
+
+Security review:
+
+- DNS pinning: tidak diimplementasikan. Mitigasi: remote + modul browser diblokir. Risiko DNS rebinding antara pemeriksaan dan koneksi untuk mode remote tanpa browser tetap ada (lihat R-SCOPE-1).
+- Pesan penolakan tidak memuat alamat internal atau hasil DNS (`scopeDenyMessage`).
 
 Known limitations:
 
-- DNS pinning untuk remote belum diimplementasikan; remote + browser diblokir sebagai mitigasi.
-- Risiko DNS rebinding antara pemeriksaan dan koneksi tetap ada untuk mode remote (lihat risk register).
+- DNS pinning belum ada (R-SCOPE-1).
+- Daftar blok hostname (`.local`, `.internal`, dll.) bersifat tetap; tidak ada daftar dinamis.
 
-Next action: audit baris penuh `scope.ts` dan `plan.ts`, lalu ubah status ke VERIFIED bila lulus.
+Next action: tidak ada untuk T-040 kecuali DNS pinning dijadwalkan pada T-190 (security hardening).
 
 ---
 
@@ -342,31 +357,52 @@ Next action: audit baris penuh `scope.ts` dan `plan.ts`, lalu ubah status ke VER
 
 ID: T-050
 Title: Run orchestrator dan state machine
-Status: EXECUTED (gate §10.4 belum lulus: audit baris penuh orchestrator belum selesai)
+Status: VERIFIED
 Depends on: T-020, T-030, T-040
 
-Files changed: `packages/orchestrator/src/orchestrator.ts`, `packages/orchestrator/src/aggregate.ts`, `packages/orchestrator/src/plan.ts`, `packages/orchestrator/tests/orchestrator.test.ts`, `packages/orchestrator/src/index.ts`, `packages/orchestrator/package.json`.
+Files changed: `packages/orchestrator/src/orchestrator.ts` (594 baris), `packages/orchestrator/src/aggregate.ts` (39 baris), `packages/orchestrator/src/plan.ts`, `packages/orchestrator/src/index.ts`, `packages/orchestrator/tests/orchestrator.test.ts` (33 tes), `packages/orchestrator/package.json`.
 
-Perubahan pada sesi T-080 (dicatat karena memengaruhi kontrak):
+Acceptance criteria dan bukti:
 
-- `ModuleContext` kini memuat `moduleResultId` agar temuan dapat mereferensinya.
-- `ModuleOutcome` tidak lagi membawa `findingIds`; temuan dikirim lewat `findings` dan disimpan oleh orchestrator (`persistFindings`) hanya untuk status PASS/FAIL/WARN. Temuan dengan `runId`/`moduleResultId` yang salah ditolak; duplikat sidik jari tidak diklaim.
-- Dicakup oleh tes integrasi browser (`functional-defects`: temuan tersimpan dan dibaca dari storage).
+- Transisi status sesuai aturan: transisi dilakukan dengan compare-and-set pada versi (`transitionWithRetry`, satu percobaan ulang).
+- Satu run aktif: tes "satu run aktif: run kedua menunggu di antrean (QUEUED)".
+- Timeout dan retry hanya untuk `retryable`: tes "adapter hang → TIMEOUT", "retry transient dibatasi maxRetries", "retry tidak berulang tanpa batas".
+- Cancel: QUEUED → CANCELLED langsung; RUNNING → CANCELLING lalu CANCELLED; tes "cancel sebelum start", "cancel saat modul berjalan".
+- Restart: RUNNING/CANCELLING → FAILED dengan `interrupted-by-restart` (`errorSummary` kini juga diisi); QUEUED → CANCELLED. Tes "run RUNNING yang tertinggal...".
+- Shutdown grace habis → FAILED dengan `shutdown-grace-exceeded` (`errorSummary` kini juga diisi). Tes BARU: "shutdown melewati grace period → ... (shutdown-grace-exceeded)". Tes ini menyuntikkan antrean macet melalui jalur internal karena jalur publik tidak dapat membuat grace habis (abort menyelesaikan race adapter). Tes gagal bila fallback dihapus (verifikasi mutasi, lihat di bawah).
+- Keluaran modul tidak valid tidak menghasilkan hasil sukses (NaN, PASS dengan errorCode): tes "keluaran adapter tidak valid (NaN)", "status PASS dengan errorCode ditolak".
+- Temuan dari keluaran tidak valid tidak disimpan: tes BARU "keluaran tidak valid tidak menyimpan temuannya".
 
-Acceptance criteria (ringkas): transisi status sesuai `ALLOWED_RUN_TRANSITIONS`; satu run aktif (antrean serial); timeout dan retry hanya untuk `retryable`; cancel → CANCELLING → CANCELLED; restart → RUNNING/CANCELLING ditandai FAILED dengan `interrupted-by-restart`; shutdown grace → `shutdown-grace-exceeded`.
+Perbaikan yang ditemukan saat audit sesi ini:
 
-Commands actually run: `npx vitest run packages/orchestrator` — 32/32 lulus (termasuk tes regresi temuan yatim); seluruh suite lulus.
+1. Temuan disimpan sebelum keluaran modul divalidasi → keluaran tidak valid dapat meninggalkan temuan yatim. Diperbaiki dengan `checkOutcome` (validasi sebelum `persistFindings`). Verifikasi mutasi: tanpa perbaikan, tes regresi gagal (1 temuan yatim tersimpan); dengan perbaikan, lulus.
+2. `errorSummary` tidak terisi untuk run FAILED karena restart atau shutdown; alasan hanya tersimpan di log transisi. Kini `errorSummary` diisi. Tes restart diperbarui dari `null` menjadi `interrupted-by-restart`.
+3. Komentar dokumentasi `ModuleOutcome` berada di atas `ModuleContext`. Dipindahkan.
 
-Line-by-line audit: `orchestrator.ts` (594 baris) dibaca seluruhnya. Temuan dan perbaikan: (1) temuan disimpan sebelum keluaran modul divalidasi → keluaran tidak valid bisa meninggalkan temuan yatim. Diperbaiki dengan `checkOutcome` (validasi sebelum `persistFindings`); tes regresi `keluaran tidak valid tidak menyimpan temuannya` gagal tanpa perbaikan (1 temuan yatim) dan lulus dengan perbaikan. (2) Komentar dokumentasi `ModuleOutcome` salah tempat → dipindahkan. `aggregate.ts` dan `plan.ts` belum dibaca seluruhnya pada sesi ini; karena itu T-050 tetap EXECUTED.
+Commands actually run:
 
-Security review: adapter menerima `ctx.signal` dari run; `invokeAdapter` mendengarkan sinyal run (bukan controller modul) agar timeout tidak salah dilaporkan sebagai CANCELLED (jangan diubah).
+- `npx vitest run packages/orchestrator` — 33/33 lulus.
+- `npx tsc -p tsconfig.json --noEmit` — PASS.
+- Uji mutasi: menonaktifkan `checkOutcome` → 1 tes gagal; menghapus fallback grace → 1 tes gagal. Keduanya dikembalikan dan tes lulus lagi.
+
+Line-by-line audit:
+
+- `orchestrator.ts` dibaca seluruhnya (594 baris).
+- `aggregate.ts` dibaca seluruhnya. Aturan agregasi cocok dengan taskbook §6.2. Modul opsional SKIPPED tidak menurunkan status; modul wajib SKIPPED menghasilkan PARTIAL.
+- `plan.ts` dan `index.ts` dibaca seluruhnya.
+
+Security review:
+
+- Adapter menerima `signal` dari run; `invokeAdapter` mendengarkan sinyal run agar timeout tidak salah dilaporkan sebagai CANCELLED.
+- Pesan error adapter asli tidak masuk hasil (`INTERNAL` dengan pesan aman).
 
 Known limitations:
 
-- Idempotency key hanya di memori (proses). Restart menghapus kunci; lihat risk register R-ORCH-1.
-- Adapter yang mengabaikan `signal` dapat meninggalkan promise menggantung setelah timeout/cancel (R-ORCH-2).
+- Idempotency key hanya di memori; restart menghapusnya (R-ORCH-1).
+- Adapter yang mengabaikan `signal` dapat meninggalkan promise berjalan setelah timeout/cancel, meski orkestrator tetap melaporkan hasil (R-ORCH-2).
+- Temuan disimpan sebelum status modul diperbarui; crash di antara keduanya dapat menyisakan temuan (R-ORCH-3, sebagian dimitigasi).
 
-Next action: audit baris penuh `orchestrator.ts` lalu ubah status bila lulus.
+Next action: tidak ada untuk T-050.
 
 ---
 
@@ -374,29 +410,55 @@ Next action: audit baris penuh `orchestrator.ts` lalu ubah status bila lulus.
 
 ID: T-060
 Title: Evidence/artifact store dan reporting core
-Status: EXECUTED (tes lulus; audit baris penuh `packages/report` belum selesai)
+Status: VERIFIED
 Depends on: T-020, T-030, T-050
 
-Files changed: `packages/storage/src/artifacts.ts`, `packages/storage/src/index.ts`, `packages/storage/tests/artifacts.test.ts`, `packages/report/` (`package.json`, `tsconfig.build.json`, `src/report.ts`, `src/index.ts`, `tests/report.test.ts`), `vitest.config.ts`.
+Files changed: `packages/storage/src/artifacts.ts` (±340 baris), `packages/storage/tests/artifacts.test.ts` (19 tes; paket storage total 43 tes termasuk `storage.test.ts`), `packages/report/src/report.ts` (376 baris), `packages/report/src/index.ts`, `packages/report/tests/report.test.ts` (19 tes), `packages/report/package.json`, `packages/report/tsconfig.build.json`.
 
-Acceptance criteria (ringkas): tipe MIME ditentukan dari isi (bukan ekstensi); nama file dari ID; penulisan atomik; file yatim dihapus bila insert metadata gagal; laporan JSON tervalidasi schema; HTML tanpa script dan ter-escape; secret dipindai sebelum simpan (fail-closed).
+Acceptance criteria dan bukti:
+
+- Tipe MIME dari isi, bukan ekstensi: `contentMismatch`; tes "MIME spoof...", "JPEG yang dideklarasikan image/png ditolak", "teks dengan NUL atau UTF-8 rusak ditolak".
+- Nama berkas dari ID: tes "nama berkas dari pengguna tidak dipakai".
+- Penulisan atomik (tmp → fsync → rename): tes "penulisan terputus (sebelum rename)".
+- Tanpa file yatim: tes "kegagalan metadata DB tidak meninggalkan file yatim" dan tes BARU "metadata tidak valid ditolak dan file final dihapus".
+- Path traversal dan symlink keluar root ditolak: tes "run id yang berisi path traversal", "symlink yang keluar root ditolak", "direktori run yang berupa symlink".
+- Laporan JSON tervalidasi schema dan round-trip: tes "laporan tervalidasi dan round-trip JSON".
+- HTML tanpa script dan ter-escape: tes "HTML injection ... di-escape", "tidak ada script atau handler inline".
+- Secret dipindai sebelum simpan (fail closed): tes "laporan tidak disimpan bila masih memuat secret".
+
+Perbaikan yang ditemukan saat audit sesi ini:
+
+1. `EvidenceSchema.parse` dijalankan sebelum `try` insert. Jika metadata tidak valid, berkas final sudah ter-rename dan tidak dihapus → artefak yatim. Kini memakai `createEvidence` (galat `VALIDATION_FAILED`) di dalam `try` yang sama dengan insert; file final dihapus bila gagal. Verifikasi mutasi: menghapus pembersihan → 2 tes gagal.
+2. `writeSync` dipanggil sekali dan hasil jumlah byte diabaikan. `writeSync` dapat menulis sebagian. Kini `writeAll` mengulang sampai seluruh buffer tertulis (dipakai di `write` dan `writeFileAtomic`).
+3. `tsc`: tipe helper `meta()` di tes tidak menerima `description`. Diperbaiki.
+4. `report.test.ts`: tes "judul laporan dan scope ... ter-escape" namanya melebihi isi asersi. Diganti namanya menjadi "judul laporan dan scope tampil di HTML (nilai asli)".
 
 Commands actually run:
 
-- `npx vitest run packages/storage packages/report` — storage 18/18 (dalam 42 tes storage+orchestrator), report 19/19.
-- `npx tsc -p tsconfig.json --noEmit` — PASS (galat `id: undefined` dan `as never` di tes report sudah diperbaiki; `ModuleErrorCode` dipakai untuk uji kode error tidak valid).
-- Seluruh suite — PASS.
+- `npx vitest run packages/storage` — 43/43 lulus (artifacts 19 + storage 24).
+- `npx vitest run packages/report` — 19/19 lulus.
+- `npx tsc -p tsconfig.json --noEmit` — PASS.
 
-Line-by-line audit: BELUM SELESAI untuk `report.ts` dan `artifacts.ts` (pembacaan penuh belum tercatat).
+Line-by-line audit:
 
-Security review: artifact store menolak path di luar root setelah realpath; MIME dari isi; laporan melewati redaksi sebelum validasi; `assertNoKnownSecrets` memblokir simpan bila pola secret tersisa.
+- `artifacts.ts` dibaca seluruhnya (326 baris + helper). Temuan dan perbaikan: (1) dan (2) di atas.
+- `report.ts` dibaca seluruhnya (376 baris). Tidak ada cacat keamanan. Catatan: `redactDeep` diterapkan sebelum validasi; URL temuan dibatasi HTTP(S) oleh `SafeUrlSchema`; HTML memakai CSP `script-src 'none'`.
+- `report.test.ts` dibaca seluruhnya. Satu tes "config snapshot tidak membawa nilai API key" lemah (hanya memeriksa satu pola regex); dicatat sebagai keterbatasan tes, bukan dihapus.
+
+Security review:
+
+- Artefak hanya ditulis di bawah root (realpath dicek, symlink ditolak).
+- MIME tidak dipercaya dari pengirim; isi diperiksa signature-nya.
+- Laporan HTML tidak memuat script; semua teks lewat `escapeHtml`.
 
 Known limitations:
 
+- Batas ukuran (`MAX_REPORT_BYTES`) hanya untuk JSON; HTML dan Markdown tidak punya batas tersendiri (diturunkan dari data yang sama, sudah dibatasi skema).
+- `saveReport` menulis tiga artefak berurutan, tidak sebagai satu kelompok atomik. Jika penulisan kedua gagal, artefak pertama tetap ada.
+- Redaksi berbasis pola; bukan jaminan lengkap (lihat `redact.ts`).
 - Retensi dan cleanup artefak belum ada (T-200).
-- Redaksi bersifat pattern-based; bukan jaminan lengkap (lihat catatan redact.ts).
 
-Next action: audit baris penuh `report.ts` dan `artifacts.ts`, lalu ubah status bila lulus.
+Next action: tidak ada untuk T-060 kecuali kelompok atomik untuk `saveReport` dijadwalkan pada T-200.
 
 ---
 
@@ -404,24 +466,48 @@ Next action: audit baris penuh `report.ts` dan `artifacts.ts`, lalu ubah status 
 
 ID: T-070
 Title: Target fixture suite dan ground truth
-Status: EXECUTED (fixture dan tes lulus; audit baris penuh belum selesai)
+Status: VERIFIED
 Depends on: T-010, T-020
 
-Files changed: `fixtures/` (clean, functional-defects, a11y-defects, ux-signals, broken-resources, security-lab, `ground-truth.json`), `packages/fixtures/` (`src/server.ts`, `src/index.ts`, `tests/fixtures.test.ts`, `package.json`, `tsconfig.build.json`), `eslint.config.js` (fixture dikecualikan dari lint), `vitest.config.ts`.
+Files changed: `fixtures/` (6 folder fixture: clean, functional-defects, a11y-defects, ux-signals, broken-resources, security-lab; `ground-truth.json`), `packages/fixtures/src/server.ts` (156 baris), `packages/fixtures/src/index.ts`, `packages/fixtures/tests/fixtures.test.ts` (24 tes), `packages/fixtures/package.json`, `packages/fixtures/tsconfig.build.json`, `eslint.config.js` (fixture dikecualikan dari lint karena sengaja memuat error).
 
-Koreksi ground truth (dilakukan T-080): FD-04 dan BR-01 semula berkind `request-failed`, padahal keduanya adalah respons HTTP 404. Diubah menjadi `http-error-response`.
+Koreksi ground truth (dilakukan di T-080): FD-04 dan BR-01 semula berkind `request-failed`, padahal keduanya respons HTTP 404. Diubah menjadi `http-error-response`.
 
-Acceptance criteria (ringkas): fixture sintetis berlabel `synthetic/demo`; server hanya 127.0.0.1; traversal ditolak; method selain GET ditolak; clean menghasilkan nol temuan yang diharapkan; 18 temuan yang diharapkan di 5 fixture.
+Acceptance criteria dan bukti:
 
-Commands actually run: `npx vitest run packages/fixtures` — 24/24 lulus.
+- Fixture sintetis berlabel `synthetic/demo`: setiap halaman memuat `meta name="nwb-fixture"`; tes "setiap halaman HTML fixture diberi label synthetic/demo".
+- Server hanya 127.0.0.1: tes "bind hanya ke 127.0.0.1...".
+- Traversal ditolak: `resolveFixturePath` memeriksa prefiks dan realpath; tes keamanan path.
+- Method selain GET/HEAD ditolak 405; tes "metode selain GET/HEAD ditolak 405".
+- Clean menghasilkan nol temuan yang diharapkan: tes "fixture clean tidak punya temuan yang diharapkan".
+- 18 temuan di 5 fixture (+ `clean` kosong): tes "setiap fixture terdaftar ada dan memiliki temuan terdokumentasi".
+- Tidak ada secret nyata: tes "tidak ada fixture yang memuat secret atau kunci API nyata".
 
-Line-by-line audit: BELUM SELESAI.
+Perbaikan yang ditemukan saat audit sesi ini:
 
-Security review: `security-lab` sengaja memantulkan `/search?q=` tanpa escape untuk uji lokal; diberi banner peringatan; tidak boleh di-deploy. Server hanya bind ke 127.0.0.1.
+1. `createReadStream(file).pipe(res)` tanpa handler `error`. Jika berkas hilang di antara pengecekan dan pembacaan, error stream menjadi uncaught dan dapat menjatuhkan proses. Kini `stream.on('error', () => res.destroy())`. Catatan: perbaikan ini tidak punya tes langsung; race penghapusan berkas sulit direproduksi secara deterministik.
 
-Known limitations: `security-lab` hanya untuk uji lokal (T-160 memakai fixture ini).
+Commands actually run:
 
-Next action: audit baris penuh `packages/fixtures` dan fixture HTML.
+- `npx vitest run packages/fixtures` — 24/24 lulus.
+
+Line-by-line audit:
+
+- Seluruh fixture HTML/JS/SVG/JSON dibaca (±460 baris) dan dicocokkan dengan ground truth satu per satu: FD-01 sampai FD-04, AX-01 sampai AX-05, UX-01 sampai UX-05, BR-01 sampai BR-03, SL-01. Total 18 temuan; semua cocok dengan elemen di HTML/JS.
+- Catatan (bukan cacat): `a11y-defects` memuat `<div onclick>` yang tidak tercantum di ground truth. Ini tidak membatalkan temuan yang tercantum, tetapi jika pemindai menandainya, hasilnya tidak diklasifikasikan sebagai false positive.
+- `server.ts` dibaca seluruhnya (lihat perbaikan di atas).
+
+Security review:
+
+- `security-lab` sengaja memantulkan `q` tanpa escape untuk uji lokal; diberi banner peringatan dan `ground-truth.json` mencatat "Jangan deploy".
+- Server tidak menyajikan berkas di luar folder fixture (prefiks + realpath).
+
+Known limitations:
+
+- `security-lab` hanya untuk uji lokal dan tidak boleh di-deploy.
+- Ground truth hanya mencakup elemen yang dirancang; bukan cakupan lengkap sebuah situs.
+
+Next action: tidak ada untuk T-070.
 
 ---
 
@@ -463,8 +549,8 @@ Negative tests (sesuai taskbook §12 T-080):
 Commands actually run:
 
 - `CHROMIUM_PATH=/tmp/chromium LD_LIBRARY_PATH=... npx vitest run packages/browser-qa` — 30/30 lulus (pada tahap sebelum tes crash ditambahkan, 28/28; tes crash lulus 2/2 saat difilter).
-- `CHROMIUM_PATH=... npx vitest run` — 329/329 lulus (seluruh suite).
-- `npx vitest run` tanpa `CHROMIUM_PATH` — 311 lulus, 18 dilewati (tes browser SKIPPED dan tidak dihitung sebagai bukti).
+- `CHROMIUM_PATH=... REQUIRE_BROWSER_TESTS=1 npx vitest run` — 331/331 lulus (seluruh suite; 15 berkas tes).
+- `npx vitest run` tanpa `CHROMIUM_PATH` — 313 lulus, 18 dilewati (tes browser SKIPPED dan tidak dihitung sebagai bukti).
 - `npx tsc -p tsconfig.json --noEmit` — PASS.
 - `npx eslint . --max-warnings=0` — PASS.
 - `npx prettier --check .` — PASS.
@@ -504,6 +590,20 @@ Known limitations:
 
 Next action: T-090 (Lighthouse adapter). Ambil dokumen Lighthouse resmi terlebih dahulu dan catat tanggalnya.
 
+## Verifikasi otomatis pada branch (CI)
+
+Workflow: `.github/workflows/ci.yml`.
+
+- Pemicu: push ke `main` dan `arena/**`, pull request, dan `workflow_dispatch`. Run lama pada ref yang sama dibatalkan (`concurrency`).
+- Job `quality` (tanpa API key, tanpa target remote): `npm ci`, lalu `npm run check` (format, lint, typecheck, tes tanpa browser, secret scan).
+- Job `browser-tests`: `REQUIRE_BROWSER_TESTS=1`, memasang Chromium dengan `npx playwright-core install --with-deps chromium`, menentukan `CHROMIUM_PATH` dari `chromium.executablePath()`, lalu menjalankan `npx vitest run` penuh. Bila Chromium tidak ada, tes browser GAGAL (tidak dilewati diam-diam).
+- Verifikasi lokal: langkah-langkah npm dan guard `REQUIRE_BROWSER_TESTS` diuji di sandbox. Job GitHub Actions dibuktikan dengan run nyata; hasilnya dicatat di bagian "Hasil run CI" di bawah.
+- Proteksi branch: TIDAK diubah. Sandbox tidak memiliki izin membaca maupun mengubah pengaturan repository (HTTP 403 pada `actions/permissions` dan `branches/main/protection`). Mengaktifkan proteksi memerlukan persetujuan dan izin pengguna.
+
+Hasil run CI: diisi setelah push pertama (lihat catatan di bawah).
+
+---
+
 ## Risk register (awal)
 
 Lihat tabel R1–R8 pada bagian T-000. Register ini diperbarui pada setiap task.
@@ -514,7 +614,7 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-ORCH-1 — Idempotency key hanya di memori; restart menghapus kunci, sehingga submit ulang setelah restart dapat membuat run baru. Status: terbuka (dicatat sebagai known limitation).
 - R-ORCH-2 — Adapter yang mengabaikan `signal` dapat meninggalkan promise berjalan setelah timeout/cancel (orchestrator tetap melaporkan hasil). Status: terbuka.
 - R-ORCH-3 — Temuan disimpan sebelum status modul diperbarui; crash di antara keduanya dapat menyisakan temuan tanpa perubahan status modul. Mitigasi: validasi keluaran sebelum penyimpanan (diuji). Status: sebagian.
-- R-BQA-1 — Chromium untuk verifikasi lokal berasal dari paket npm pihak ketiga; bukan build resmi Playwright. Mitigasi: CI memakai `npx playwright install --with-deps` (T-220). Status: terbuka sampai T-220.
+- R-BQA-1 — Chromium untuk verifikasi lokal berasal dari paket npm pihak ketiga; bukan build resmi Playwright. Mitigasi: job `browser-tests` di CI memasang Chromium resmi lewat `playwright-core` dan gagal bila tidak tersedia. Status: sebagian; terbukti hanya setelah run CI berhasil.
 - R-BQA-2 — Screenshot tidak diredaksi pada level piksel (`redactionApplied: false`). Status: terbuka untuk target non-sintetis.
 - R-BQA-3 — Pemindaian `RISKY_CLICK_PATTERN` berbasis substring; dapat menolak label aman (mis. "display"). Trade-off konservatif yang disengaja.
 - R-FIX-1 — `security-lab` sengaja tidak meng-escape `q`; hanya untuk uji lokal dengan banner peringatan, tidak boleh di-deploy. Mitigasi: server bind 127.0.0.1.

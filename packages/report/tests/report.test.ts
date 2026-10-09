@@ -229,7 +229,7 @@ describe('render HTML', () => {
     expect(renderReportHtml(buildFor({ synthetic: false }))).not.toContain('SYNTHETIC / DEMO');
   });
 
-  it('judul laporan dan scope dipaparkan sebagai teks ter-escape', () => {
+  it('judul laporan dan scope tampil di HTML (nilai asli)', () => {
     const html = renderReportHtml(buildFor());
     expect(html).toContain('<html lang="id">');
     expect(html).toContain('Fixture lokal (synthetic/demo)');

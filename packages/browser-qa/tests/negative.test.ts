@@ -17,6 +17,12 @@ import { FunctionalQaAdapter, type FunctionalQaConfig } from '../src/index.js';
  */
 const BROWSER_PATH = process.env['CHROMIUM_PATH'];
 const hasBrowser = typeof BROWSER_PATH === 'string' && BROWSER_PATH.length > 0;
+// Di CI browser, tes browser tidak boleh dilewati diam-diam: tanpa Chromium, berkas gagal.
+if (process.env['REQUIRE_BROWSER_TESTS'] === '1' && !hasBrowser) {
+  throw new Error(
+    'REQUIRE_BROWSER_TESTS=1 tetapi CHROMIUM_PATH kosong: tes browser tidak boleh dilewati.',
+  );
+}
 const TIMEOUT_MS = 90_000;
 
 type Site = {

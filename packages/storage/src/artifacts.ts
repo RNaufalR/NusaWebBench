@@ -17,8 +17,8 @@ import path from 'node:path';
 import {
   ALLOWED_ARTIFACT_MIME_TYPES,
   AppError,
+  createEvidence,
   EVIDENCE_KINDS,
-  EvidenceSchema,
   IdSchema,
   MAX_ARTIFACT_BYTES,
   newId,
@@ -187,7 +187,7 @@ export class ArtifactStore {
     try {
       const fd = openSync(tmpPath, 'wx', 0o600);
       try {
-        writeSync(fd, input.bytes);
+        writeAll(fd, input.bytes);
         fsyncSync(fd);
       } finally {
         closeSync(fd);
@@ -199,25 +199,27 @@ export class ArtifactStore {
       throw new AppError('ARTIFACT_ERROR', { cause: err, debugDetail: 'write-failed' });
     }
 
-    const record = EvidenceSchema.parse({
-      id,
-      runId: input.runId,
-      kind: input.kind,
-      pathRelative: relative,
-      mimeType: input.mimeType,
-      sizeBytes: input.bytes.length,
-      sha256,
-      createdAt: this.now().toISOString(),
-      sourceTool: input.sourceTool,
-      sourceVersion: input.sourceVersion,
-      description: input.description,
-      redactionApplied: input.redactionApplied,
-      synthetic: input.synthetic,
-    });
+    // Validasi metadata dilakukan sebelum insert; kegagalannya ikut membersihkan file final.
+    let record: Evidence;
     try {
+      record = createEvidence({
+        id,
+        runId: input.runId,
+        kind: input.kind,
+        pathRelative: relative,
+        mimeType: input.mimeType,
+        sizeBytes: input.bytes.length,
+        sha256,
+        createdAt: this.now().toISOString(),
+        sourceTool: input.sourceTool,
+        sourceVersion: input.sourceVersion,
+        description: input.description,
+        redactionApplied: input.redactionApplied,
+        synthetic: input.synthetic,
+      });
       this.evidence.insert(record);
     } catch (err) {
-      // Metadata gagal disimpan: hapus file agar tidak menjadi artefak yatim.
+      // Metadata gagal divalidasi atau disimpan: hapus file agar tidak menjadi artefak yatim.
       removeIfExists(finalPath);
       throw err;
     }
@@ -285,6 +287,16 @@ export class ArtifactStore {
   }
 }
 
+/** Menulis seluruh buffer. `writeSync` dapat menulis sebagian; sisanya diulang sampai habis. */
+function writeAll(fd: number, data: Buffer): void {
+  let offset = 0;
+  while (offset < data.length) {
+    const written = writeSync(fd, data, offset, data.length - offset);
+    if (written <= 0) throw new Error('short-write');
+    offset += written;
+  }
+}
+
 function removeIfExists(p: string): void {
   try {
     if (existsSync(p)) unlinkSync(p);
@@ -313,7 +325,7 @@ export function writeFileAtomic(rootDir: string, absPath: string, data: Buffer):
   try {
     const fd = openSync(tmp, 'wx', 0o600);
     try {
-      writeSync(fd, data);
+      writeAll(fd, data);
       fsyncSync(fd);
     } finally {
       closeSync(fd);

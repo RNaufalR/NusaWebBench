@@ -1,16 +1,22 @@
 name: CI
 
+# Verifikasi otomatis untuk main dan seluruh branch sesi (arena/**).
 on:
   push:
-    branches: [main]
+    branches: [main, 'arena/**']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
-    name: Quality gates (no API keys, no remote targets)
+    name: Quality gates (tanpa API key, tanpa target remote)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -23,5 +29,31 @@ jobs:
           cache: npm
       - name: Clean install
         run: npm ci --no-audit --no-fund
-      - name: Format, lint, typecheck, tests, secret scan
+      - name: Format, lint, typecheck, tests (tanpa browser), secret scan
         run: npm run check
+
+  browser-tests:
+    name: Tes browser (Chromium dari Playwright, wajib)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REQUIRE_BROWSER_TESTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Clean install
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium (Playwright)
+        run: npx playwright-core install --with-deps chromium
+      - name: Resolve Chromium path
+        run: |
+          CHROMIUM_PATH="$(node --input-type=module -e "import { chromium } from 'playwright-core'; process.stdout.write(chromium.executablePath());")"
+          test -x "$CHROMIUM_PATH"
+          echo "CHROMIUM_PATH=$CHROMIUM_PATH" >> "$GITHUB_ENV"
+      - name: Run full test suite with browser tests
+        run: npx vitest run

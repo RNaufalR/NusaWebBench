@@ -122,7 +122,11 @@ export async function startFixture(
       res.end();
       return;
     }
-    createReadStream(file).pipe(res);
+    // Berkas bisa hilang di antara pengecekan dan pembacaan; error stream tidak boleh
+    // menjatuhkan proses. Koneksi ditutup saja.
+    const stream = createReadStream(file);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
   });
 
   await new Promise<void>((resolve, reject) => {

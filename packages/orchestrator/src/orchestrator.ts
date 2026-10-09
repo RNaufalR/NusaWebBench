@@ -220,7 +220,9 @@ export class RunOrchestrator {
     if (outcome === 'timeout') {
       for (const run of this.store.runs.list({ limit: 200 })) {
         if (run.status === 'RUNNING' || run.status === 'CANCELLING') {
-          this.transitionWithRetry(run.id, 'FAILED', 'shutdown-grace-exceeded');
+          this.transitionWithRetry(run.id, 'FAILED', 'shutdown-grace-exceeded', {
+            errorSummary: 'shutdown-grace-exceeded',
+          });
         }
       }
     }
@@ -237,7 +239,9 @@ export class RunOrchestrator {
         this.transitionWithRetry(run.id, 'CANCELLED', 'interrupted-by-restart');
         recovered++;
       } else if (run.status === 'RUNNING' || run.status === 'CANCELLING') {
-        this.transitionWithRetry(run.id, 'FAILED', 'interrupted-by-restart');
+        this.transitionWithRetry(run.id, 'FAILED', 'interrupted-by-restart', {
+          errorSummary: 'interrupted-by-restart',
+        });
         recovered++;
       }
     }

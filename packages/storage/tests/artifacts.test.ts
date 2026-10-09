@@ -24,7 +24,7 @@ let store: Store;
 let run: Run;
 let root: string;
 
-function meta(overrides: Partial<{ kind: 'other' | 'json' }> = {}) {
+function meta(overrides: Partial<{ kind: 'other' | 'json'; description: string }> = {}) {
   return {
     runId: run.id,
     kind: 'other' as const,
@@ -204,6 +204,20 @@ describe('ArtifactStore.write dan readVerified', () => {
     store.evidence.insert = original;
     const runDir = path.join(root, run.id);
     expect(existsSync(runDir) ? readdirSync(runDir) : []).toEqual([]);
+  });
+
+  it('metadata tidak valid ditolak dan file final dihapus (tanpa file yatim)', () => {
+    const artifacts = newStore();
+    expect(() =>
+      artifacts.write({
+        ...meta({ description: 'x'.repeat(600) }),
+        mimeType: 'text/plain',
+        bytes: Buffer.from('x'),
+      }),
+    ).toThrow(expect.objectContaining({ code: 'VALIDATION_FAILED' }));
+    const runDir = path.join(root, run.id);
+    expect(existsSync(runDir) ? readdirSync(runDir) : []).toEqual([]);
+    expect(store.evidence.listByRun(run.id)).toEqual([]);
   });
 
   it('penulisan terputus (sebelum rename) tidak menyisakan file final maupun sementara', () => {
