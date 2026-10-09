@@ -17,6 +17,7 @@ export default defineConfig({
       '@nusawebbench/report': path.join(root, 'packages/report/src/index.ts'),
       '@nusawebbench/fixtures': path.join(root, 'packages/fixtures/src/index.ts'),
       '@nusawebbench/browser-qa': path.join(root, 'packages/browser-qa/src/index.ts'),
+      '@nusawebbench/lighthouse': path.join(root, 'packages/lighthouse/src/index.ts'),
     },
   },
   test: {

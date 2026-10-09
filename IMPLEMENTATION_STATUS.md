@@ -21,7 +21,7 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-060 | Evidence/artifact store dan reporting core        | VERIFIED | T-020, T-030, T-050                             |
 | T-070 | Target fixture suite dan ground truth             | VERIFIED | T-010, T-020                                    |
 | T-080 | Functional QA adapter (Playwright)                | VERIFIED | T-040, T-050, T-060, T-070                      |
-| T-090 | Lighthouse adapter                                | PLANNED  | T-040, T-050, T-060, T-070                      |
+| T-090 | Lighthouse adapter                                | VERIFIED | T-040, T-050, T-060, T-070                      |
 | T-100 | Deterministic UX/accessibility heuristic engine   | PLANNED  | T-020, T-060, T-070, T-080                      |
 | T-110 | Gemini adapter                                    | PLANNED  | T-010, T-020, T-030, T-060                      |
 | T-120 | Groq adapter                                      | PLANNED  | T-010, T-020, T-030, T-060                      |
@@ -37,7 +37,7 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-220 | CI, release checks, artifact validation           | PLANNED  | seluruh task rilis                              |
 | T-230 | Final acceptance audit dan release handoff        | PLANNED  | T-000 s.d. T-220                                |
 
-Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED`: T-000 s.d. T-080 (9 task). Sisanya (T-090 s.d. T-230) `PLANNED`. Tidak ada task yang `EXECUTED` atau `BLOCKED` saat ini.
+Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED`: T-000 s.d. T-090 (10 task). Sisanya (T-100 s.d. T-230) `PLANNED`. Tidak ada task yang `EXECUTED` atau `BLOCKED` saat ini.
 
 ---
 
@@ -590,6 +590,70 @@ Known limitations:
 
 Next action: T-090 (Lighthouse adapter). Ambil dokumen Lighthouse resmi terlebih dahulu dan catat tanggalnya.
 
+## T-090 — Lighthouse adapter
+
+ID: T-090
+Title: Lighthouse adapter
+Status: VERIFIED
+Depends on: T-040, T-050, T-060, T-070
+
+Files changed:
+
+- Baru: `packages/lighthouse/` — `package.json` (dependensi dipin: `lighthouse` 13.5.0, `chrome-launcher` 1.2.2, `zod` 4.6.5; workspace `@nusawebbench/core`, `orchestrator`, `storage` 0.1.0), `tsconfig.build.json`, `src/lighthouse.ts`, `src/index.ts`, `tests/lighthouse.test.ts` (24 tes).
+- Diubah: `vitest.config.ts` (alias `@nusawebbench/lighthouse`), `package-lock.json`.
+
+Sumber resmi (diambil 2026-10-09): Lighthouse `docs/configuration.md` (https://github.com/GoogleChrome/lighthouse/blob/main/docs/configuration.md). Pemakaian: API Node `lighthouse(url, flags)` dengan `port` dari `chrome-launcher`, `output: 'json'`, `onlyCategories`, `screenEmulation`, `throttlingMethod: 'simulate'`. Versi dipin: 13.5.0 (`npm view lighthouse version`).
+
+Acceptance criteria dan bukti:
+
+- Berjalan pada fixture `clean` dengan Chromium nyata (Chrome 153 dari `/tmp/chromium`): status PASS, skor performa 0–100, `toolVersion` memuat `13.5.0` — tes `fixture clean dijalankan dengan Lighthouse dan Chrome nyata`.
+- Output valid dan metadata lengkap: `toolVersion` = versi Lighthouse + versi Chrome dari `environment.hostUserAgent`; `lighthouse_duration_ms` dari `timing.total`; `comparable`; artefak JSON mentah diredaksi dengan `redactionApplied: true` dan hash terverifikasi (`readVerified`).
+- Tool missing → UNAVAILABLE `TOOL_MISSING`, runner tidak dipanggil — tes executable tidak ada dan tidak diset.
+- Timeout → ERROR `TIMEOUT`, sinyal runner dibatalkan.
+- Skor null tidak dicatat sebagai 0; metrik NaN/Infinity tidak dicatat (diperiksa lewat `Number.isFinite`).
+- Kondisi tidak comparable (form factor, throttling, origin akhir) diberi `comparable: 0` dan alasan, tidak disembunyikan.
+
+Negative tests (sesuai taskbook §12 T-090):
+
+- malformed output (string, kategori hilang, `categories` bukan objek) → ERROR `TOOL_FAILED` ✓
+- timeout → ERROR `TIMEOUT` ✓; runner yang terlambat setelah timeout tidak mengubah hasil ✓
+- missing executable → UNAVAILABLE `TOOL_MISSING` ✓
+- target redirect (`finalUrl` di origin lain) → ERROR `SCOPE_DENIED`, tanpa artefak ✓
+- unsupported flag (kunci config tak dikenal, mis. `extraFlag`; `startPath` protocol-relative; `formFactor: tablet`) → ERROR `CONFIG_INVALID` ✓
+- browser launch failure (runner melempar sebelum Lighthouse berjalan) → ERROR `TOOL_FAILED`, pesan asli (`ENOENT`) tidak dibocorkan ✓
+- invalid numeric metric (NaN) → metrik tidak dicatat ✓
+- runtimeError dari Lighthouse → ERROR `TOOL_FAILED` ✓
+- laporan melebihi `maxReportBytes` → ditolak (ERROR), tidak dipotong diam-diam ✓
+- pembatalan saat berjalan → ERROR `CANCELLED`; dibatalkan sebelum mulai → runner tidak dipanggil ✓
+- artefak gagal disimpan → hasil tetap PASS dengan `artifact_saved: 0` ✓
+- secret di detail audit diredaksi sebelum disimpan (`[REDACTED:GROQ_API_KEY]`) ✓
+
+Audit khusus (baris per baris, `src/lighthouse.ts`):
+
+- Subprocess args: tidak ada string shell. Flag Chrome berupa array konstanta `CHROME_FLAGS`. `url` dibentuk dari `startPath` di-resolve terhadap origin grant, lalu dicek `checkUrlInScope`.
+- Output parsing: keluaran divalidasi ukuran (`maxReportBytes`) dan skema zod sebelum dibaca; skema bersifat passthrough hanya untuk bidang yang tidak dipakai.
+- Numeric validation: skor dibatasi 0–1 dan nullable; metrik harus `finite`.
+- Timing metadata: `timing.total` dicatat sebagai `lighthouse_duration_ms`; versi Lighthouse dan Chrome dicatat di `toolVersion`.
+- Artifact size: dibatasi `maxReportBytes` (default 3 MB, maks 5 MB) sebelum penyimpanan.
+- Browser cleanup: `defaultLighthouseRunner` selalu memanggil `chrome.kill()` di `finally`, dan juga saat abort. Dibuktikan oleh tes real Chromium (proses selesai dalam ~7,5 detik); tes penghentian paksa per proses tidak dilakukan.
+- Kesalahan internal tidak dibocorkan: pesan asli dari runner tidak masuk `errorMessageSafe`.
+
+Commands actually run:
+
+- `npx vitest run packages/lighthouse` dengan `CHROMIUM_PATH=/tmp/chromium LD_LIBRARY_PATH=/tmp/al2023x/lib` — 24/24 lulus.
+- `npx vitest run packages/lighthouse` tanpa `CHROMIUM_PATH` — 23 lulus, 1 dilewati (tes Chromium nyata).
+- `npx tsc -p tsconfig.json --noEmit` — PASS. `npx eslint packages/lighthouse --max-warnings=0` — PASS.
+- `node scripts/secret-scan.mjs` — `findings=0`.
+- Seluruh suite dijalankan sebelum penambahan dua tes terakhir: 352/353, satu kegagalan (uji konfigurasi yang diperbaiki), lalu diperbaiki.
+
+Known limitations:
+
+- Lighthouse tidak punya route guard. Pembatasan jaringan hanya lewat `--host-resolver-rules` Chrome (R-LH-1).
+- `--no-sandbox` dipakai agar Chrome berjalan di container/sandbox. Ini memperlemah isolasi proses Chrome (R-LH-1).
+- Status PASS berarti eksekusi dan validasi berhasil, bukan ambang skor.
+
+---
+
 ## Verifikasi otomatis pada branch (CI)
 
 Workflow: `.github/workflows/ci.yml`.
@@ -623,6 +687,7 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-BQA-1 — Chromium untuk verifikasi lokal berasal dari paket npm pihak ketiga; bukan build resmi Playwright. Mitigasi: job `browser-tests` di CI memasang Chromium resmi lewat `playwright-core` dan gagal bila tidak tersedia. Status: sebagian; terbukti hanya setelah run CI berhasil.
 - R-BQA-2 — Screenshot tidak diredaksi pada level piksel (`redactionApplied: false`). Status: terbuka untuk target non-sintetis.
 - R-BQA-3 — Pemindaian `RISKY_CLICK_PATTERN` berbasis substring; dapat menolak label aman (mis. "display"). Trade-off konservatif yang disengaja.
+- R-LH-1 — Lighthouse tanpa route guard; pembatasan jaringan hanya lewat `--host-resolver-rules` Chrome. `--no-sandbox` diperlukan di container dan memperlemah isolasi Chrome. Mitigasi: flag resolver, mode remote + Lighthouse diblokir `buildRunPlan` (T-040). Status: terbuka.
 - R-FIX-1 — `security-lab` sengaja tidak meng-escape `q`; hanya untuk uji lokal dengan banner peringatan, tidak boleh di-deploy. Mitigasi: server bind 127.0.0.1.
 
 ---
