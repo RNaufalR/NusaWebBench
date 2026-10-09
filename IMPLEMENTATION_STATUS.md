@@ -600,7 +600,13 @@ Workflow: `.github/workflows/ci.yml`.
 - Verifikasi lokal: langkah-langkah npm dan guard `REQUIRE_BROWSER_TESTS` diuji di sandbox. Job GitHub Actions dibuktikan dengan run nyata; hasilnya dicatat di bagian "Hasil run CI" di bawah.
 - Proteksi branch: TIDAK diubah. Sandbox tidak memiliki izin membaca maupun mengubah pengaturan repository (HTTP 403 pada `actions/permissions` dan `branches/main/protection`). Mengaktifkan proteksi memerlukan persetujuan dan izin pengguna.
 
-Hasil run CI: diisi setelah push pertama (lihat catatan di bawah).
+Hasil run CI (commit `7f38e06`, run `37879282415`, branch `arena/48bd00ed-nusawebbench`):
+
+- Job `quality`: success (23 detik).
+- Job `browser-tests`: success (56 detik). Langkah `Install Chromium`, `Resolve Chromium path` (dengan `test -x`), dan `Run full test suite` semuanya hijau.
+- Log job tidak dapat diunduh dari sandbox (`gh run view --log` gagal dengan EOF pada URL hasil). Jumlah tes dari run CI belum tercatat langsung.
+- Bukti tidak dilewati: dengan `REQUIRE_BROWSER_TESTS=1`, bila `CHROMIUM_PATH` tidak valid, berkas tes browser melempar error dan job gagal. Job hijau berarti jalur browser aktif, bukan dilewati.
+- Peringatan dari GitHub: Node.js 20 untuk `actions/checkout@v4` dan `actions/setup-node@v4` (dipaksa ke Node 24); runner `ubuntu-latest` akan migrasi ke Ubuntu 26 pada 19 Oktober 2026. Perlu ditinjau sebelum T-220.
 
 ---
 
