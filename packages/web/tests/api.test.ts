@@ -5,7 +5,11 @@ import path from 'node:path';
 import { AppError, loadConfig } from '@nusawebbench/core';
 import { FunctionalQaAdapter } from '@nusawebbench/browser-qa';
 import { startFixture } from '@nusawebbench/fixtures';
-import { RunOrchestrator } from '@nusawebbench/orchestrator';
+import {
+  RunOrchestrator,
+  type ModuleAdapter,
+  type ModuleOutcome,
+} from '@nusawebbench/orchestrator';
 import { AiService, AiSettingsService } from '@nusawebbench/ai';
 import { UxRulesAdapter } from '@nusawebbench/ux-rules';
 import { ArtifactStore, Store } from '@nusawebbench/storage';
@@ -17,6 +21,37 @@ const REQUIRE = process.env['REQUIRE_BROWSER_TESTS'] === '1';
 if (REQUIRE && !BROWSER) throw new Error('REQUIRE_BROWSER_TESTS=1 tetapi CHROMIUM_PATH kosong.');
 const real = BROWSER ? it : it.skip;
 const KEY_CANARY = `AIza${'W'.repeat(35)}`;
+
+/** Adapter gerbang: menahan run LIGHTHOUSE sampai dilepas, agar urutan antrean deterministik. */
+const gate = (() => {
+  // Pelepasan bersifat sticky: bila adapter baru dipanggil setelah release(), ia langsung selesai.
+  const outcome: ModuleOutcome = { status: 'SKIPPED', skippedReason: 'uji-gerbang' };
+  let released = false;
+  let resolveRun: ((o: ModuleOutcome) => void) | null = null;
+  let resolveDone: () => void = () => undefined;
+  const done = new Promise<void>((r) => {
+    resolveDone = r;
+  });
+  const adapter: ModuleAdapter = {
+    module: 'LIGHTHOUSE',
+    required: false,
+    timeoutMs: 120_000,
+    maxRetries: 0,
+    run: () =>
+      new Promise<ModuleOutcome>((resolve) => {
+        if (released) resolve(outcome);
+        else resolveRun = resolve;
+      }).finally(() => resolveDone()),
+  };
+  return {
+    adapter,
+    done,
+    release: () => {
+      released = true;
+      if (resolveRun) resolveRun(outcome);
+    },
+  };
+})();
 
 let dir: string;
 let server: Server;
@@ -41,6 +76,7 @@ beforeAll(async () => {
     adapters: [
       new FunctionalQaAdapter({ artifacts, ...(BROWSER ? { executablePath: BROWSER } : {}) }),
       new UxRulesAdapter({ artifacts, ...(BROWSER ? { executablePath: BROWSER } : {}) }),
+      gate.adapter,
     ],
   });
   const aiSettings = new AiSettingsService(store, config);
@@ -302,22 +338,25 @@ describe('run: validasi, scope, dan idempotensi', () => {
     expect((b.json as { id: string }).id).toBe((a.json as { id: string }).id);
   });
 
-  it('pembatalan run yang masih QUEUED → CANCELLED', async () => {
-    const first = await call('POST', '/api/runs', {
+  it('pembatalan run yang masih QUEUED → CANCELLED (deterministik lewat adapter gerbang)', async () => {
+    // Run pertama ditahan oleh adapter gerbang sampai asersi selesai; run kedua pasti QUEUED di belakangnya.
+    const blocker = await call('POST', '/api/runs', {
       targetId: fixtureTargetId,
-      modules: ['FUNCTIONAL_QA'],
+      modules: ['LIGHTHOUSE'],
       acknowledged: true,
     });
-    const second = await call('POST', '/api/runs', {
+    expect(blocker.status).toBe(202);
+    const queued = await call('POST', '/api/runs', {
       targetId: fixtureTargetId,
       modules: ['UX_RULES'],
       acknowledged: true,
     });
-    const id = (second.json as { id: string }).id;
+    const id = (queued.json as { id: string }).id;
     const c = await call('POST', `/api/runs/${id}/cancel`, {});
     expect(c.status).toBe(200);
     expect(c.json).toMatchObject({ status: 'CANCELLED' });
-    expect((first.json as { id: string }).id).not.toBe(id);
+    gate.release();
+    await gate.done;
   });
 
   it('artefak: ID arbitrer, path traversal, dan artefak dari run lain tidak bisa dibuka', async () => {
