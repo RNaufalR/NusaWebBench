@@ -83,7 +83,7 @@ export function buildK6Script(input: {
     `const DURATION = ${json(`${input.durationSec}s`)};`,
     'export const options = {',
     '  scenarios: { fixed: { executor: "constant-arrival-rate", rate: RATE, timeUnit: "1s", duration: DURATION, preAllocatedVUs: VUS, maxVUs: VUS } },',
-    '  thresholds: { http_req_failed: ["rate<0.05"] },',
+    '  thresholds: { http_req_failed: [{ threshold: "rate<0.05", abortOnFail: true, delayAbortEval: "1s" }] },',
     '};',
     'export default function () {',
     '  const r = http.get(TARGET, { timeout: "5s" });',
@@ -91,6 +91,31 @@ export function buildK6Script(input: {
     '}',
     '',
   ].join('\n');
+}
+
+/**
+ * Kondisi test yang dicatat ke hasil modul dan laporan (taskbook T-150 instruksi 9): simulasi, preset,
+ * batas keras, stop condition, dan total request yang direncanakan. Hanya nilai primitif yang sudah divalidasi.
+ */
+export function k6ConditionSnapshot(
+  config: K6Config,
+): Record<string, string | number | boolean | null> {
+  return {
+    simulation: true,
+    preset: config.preset,
+    path: config.path,
+    vus: config.vus,
+    maxVus: K6_LIMITS.maxVus,
+    ratePerSec: config.ratePerSec,
+    maxRatePerSec: K6_LIMITS.maxRatePerSec,
+    durationSec: config.durationSec,
+    maxDurationSec: K6_LIMITS.maxDurationSec,
+    plannedRequests: config.ratePerSec * config.durationSec,
+    maxTotalRequests: K6_LIMITS.maxTotalRequests,
+    processTimeoutSec: K6_LIMITS.timeoutMs / 1000,
+    stopConditionFailedRate: 0.05,
+    abortOnFail: true,
+  };
 }
 
 /** Ringkasan k6 yang divalidasi. Metrik yang tidak ada tidak diisi (tidak dikarang). */
@@ -183,6 +208,7 @@ export class K6Adapter implements ModuleAdapter {
     }
 
     const target = new URL(config.path, ctx.grant.origin).href;
+    const condition = k6ConditionSnapshot(config);
     const scope = await checkUrlInScope(target, ctx.grant);
     if (!scope.allowed) {
       return {
@@ -245,6 +271,7 @@ export class K6Adapter implements ModuleAdapter {
           status: 'ERROR',
           errorCode: 'CANCELLED',
           errorMessageSafe: 'Load test dibatalkan.',
+          configSnapshot: condition,
         };
       if (result.kind === 'timeout')
         return {
@@ -252,6 +279,7 @@ export class K6Adapter implements ModuleAdapter {
           errorCode: 'TIMEOUT',
           errorMessageSafe: 'Load test melewati batas waktu.',
           retryable: false,
+          configSnapshot: condition,
           toolName: K6_TOOL,
           toolVersion,
         };
@@ -265,6 +293,7 @@ export class K6Adapter implements ModuleAdapter {
           status: 'ERROR',
           errorCode: 'TOOL_FAILED',
           errorMessageSafe: 'k6 tidak menghasilkan ringkasan.',
+          configSnapshot: condition,
           toolName: K6_TOOL,
           toolVersion,
         };
@@ -277,6 +306,7 @@ export class K6Adapter implements ModuleAdapter {
           status: 'ERROR',
           errorCode: 'TOOL_FAILED',
           errorMessageSafe: 'Ringkasan k6 tidak valid.',
+          configSnapshot: condition,
           toolName: K6_TOOL,
           toolVersion,
         };
@@ -293,16 +323,29 @@ export class K6Adapter implements ModuleAdapter {
       if (summary.p95Ms !== null) metrics['p95Ms'] = summary.p95Ms;
 
       if (result.kind === 'exit' && result.code === 0) {
-        return { status: 'PASS', metrics, toolName: K6_TOOL, toolVersion };
+        return {
+          status: 'PASS',
+          metrics,
+          configSnapshot: condition,
+          toolName: K6_TOOL,
+          toolVersion,
+        };
       }
       if (result.kind === 'exit' && result.code === 99) {
         // Threshold gagal: ini hasil ukuran, bukan error tool.
-        return { status: 'FAIL', metrics, toolName: K6_TOOL, toolVersion };
+        return {
+          status: 'FAIL',
+          metrics,
+          configSnapshot: condition,
+          toolName: K6_TOOL,
+          toolVersion,
+        };
       }
       return {
         status: 'ERROR',
         errorCode: 'TOOL_FAILED',
         errorMessageSafe: 'k6 keluar dengan kegagalan.',
+        configSnapshot: condition,
         toolName: K6_TOOL,
         toolVersion,
       };
@@ -341,22 +384,42 @@ export class K6Adapter implements ModuleAdapter {
         signal.removeEventListener('abort', onAbort);
         resolve(v);
       };
-      const kill = () => {
-        child.kill('SIGTERM');
-        setTimeout(() => child.kill('SIGKILL'), 2_000).unref();
-      };
+      // Hasil pembatalan/timeout hanya dikembalikan setelah proses benar-benar keluar. k6 melakukan
+      // graceful stop saat SIGTERM, sehingga tanpa menunggu proses masih hidup setelah run dilaporkan
+      // selesai. SIGKILL dipaksa bila SIGTERM tidak cukup dalam 2 detik.
+      const terminate = (): Promise<void> =>
+        new Promise((done) => {
+          if (child.exitCode !== null || child.signalCode !== null) {
+            done();
+            return;
+          }
+          const hardKill = setTimeout(() => child.kill('SIGKILL'), 2_000);
+          const giveUp = setTimeout(done, 7_000);
+          child.once('exit', () => {
+            clearTimeout(hardKill);
+            clearTimeout(giveUp);
+            done();
+          });
+          child.kill('SIGTERM');
+        });
+      let terminating = false;
       const onAbort = () => {
-        kill();
-        finish({ kind: 'cancelled' });
+        terminating = true;
+        void terminate().then(() => finish({ kind: 'cancelled' }));
       };
       const timer = setTimeout(() => {
-        kill();
-        finish({ kind: 'timeout' });
+        terminating = true;
+        void terminate().then(() => finish({ kind: 'timeout' }));
       }, this.timeoutMs);
       signal.addEventListener('abort', onAbort, { once: true });
       if (signal.aborted) onAbort();
-      child.on('error', () => finish({ kind: 'exit', code: -1 }));
-      child.on('exit', (code) => finish({ kind: 'exit', code: code ?? -1 }));
+      // Exit saat pembatalan/timeout diserahkan ke terminate() agar hasilnya tetap cancelled/timeout.
+      child.on('error', () => {
+        if (!terminating) finish({ kind: 'exit', code: -1 });
+      });
+      child.on('exit', (code) => {
+        if (!terminating) finish({ kind: 'exit', code: code ?? -1 });
+      });
     });
   }
 }

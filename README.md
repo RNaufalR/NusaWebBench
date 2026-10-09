@@ -95,7 +95,9 @@ evidence tetap ada sebagai jejak audit. Belum ada tombol di dashboard atau perin
 - `K6_ENABLED=false` secara default. Hanya preset `fixed-smoke` (maksimum 2 VU, 5 request/detik,
   30 detik, 100 request total). Stress, flood, dan spike tidak tersedia.
 - Butuh binary k6 di `K6_BIN`. Adapter menolak remote; buildRunPlan juga memblokir remote.
-- Tes k6 nyata bersifat opt-in (`K6_BIN` diatur). Di sandbox pengembangan binary tidak tersedia.
+- Tes k6 nyata bersifat opt-in (`K6_BIN` diatur). Binary yang diuji adalah k6 v2.3.0 yang dibangun dari
+  commit tag resmi: `scripts/build-k6-verified.sh [direktori]` (butuh Go ≥1.26 di PATH). Lalu jalankan
+  `K6_BIN=<direktori>/k6 npx vitest run packages/load-k6`. Versi k6 lain belum diuji.
 
 ## Strix — batasan
 

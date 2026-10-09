@@ -1,4 +1,6 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRun, createTarget, type ScopeGrant } from '@nusawebbench/core';
@@ -200,6 +202,18 @@ describe('adapter: gerbang dan proses', () => {
       failedRate: 0,
       p95Ms: 12.5,
     });
+    // Kondisi test dicatat: simulasi, preset, batas keras, dan stop condition.
+    expect(out.configSnapshot).toMatchObject({
+      simulation: true,
+      preset: 'fixed-smoke',
+      maxVus: 2,
+      maxRatePerSec: 5,
+      maxDurationSec: 30,
+      maxTotalRequests: 100,
+      plannedRequests: 6,
+      abortOnFail: true,
+      stopConditionFailedRate: 0.05,
+    });
   });
 
   it('threshold gagal (exit 99) → FAIL dengan metrik; bukan error tool', async () => {
@@ -289,6 +303,50 @@ function alive(pid: number): boolean {
   }
 }
 
+/**
+ * Server lokal untuk kondisi gagal: `error` membalas 500 untuk setiap request; `overload` membalas
+ * setelah 7 detik, melewati timeout request k6 (5 detik). Hanya loopback.
+ */
+async function startFaultServer(
+  kind: 'error' | 'overload',
+): Promise<{ origin: string; close: () => Promise<void> }> {
+  const server: Server = createServer((_req, res) => {
+    if (kind === 'error') {
+      res.writeHead(500, { 'content-type': 'text/plain' });
+      res.end('uji server error');
+      return;
+    }
+    setTimeout(() => {
+      if (!res.writableEnded) {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('terlambat');
+      }
+    }, 7_000);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const addr = server.address();
+  if (addr === null || typeof addr === 'string') throw new Error('alamat server tidak valid');
+  return {
+    origin: `http://127.0.0.1:${addr.port}`,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  };
+}
+
+/**
+ * Jumlah proses k6 `run` yang dijalankan dari K6_BIN. Dicocokkan dengan executable itu di awal baris
+ * args (bukan substring), agar shell atau proses lain yang kebetulan memuat teks serupa tidak terhitung.
+ */
+function countK6RunProcesses(): number {
+  const bin = K6_BIN;
+  if (!bin) return 0;
+  const ps = spawnSync('ps', ['-eo', 'args'], { encoding: 'utf8' });
+  return ps.stdout.split('\n').filter((l) => l.trim().startsWith(`${bin} run`)).length;
+}
+
 describe('k6 nyata (opt-in, K6_BIN)', () => {
   const real = K6_BIN ? it : it.skip;
   real(
@@ -305,6 +363,66 @@ describe('k6 nyata (opt-in, K6_BIN)', () => {
         expect(out.metrics?.['observedRequests']).toBeGreaterThan(0);
       } finally {
         await fx.close();
+      }
+    },
+    120_000,
+  );
+  real(
+    'pembatalan nyata: k6 dihentikan dan tidak ada proses k6 yang tertinggal',
+    async () => {
+      const fx = await startFixture('clean');
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 1_500);
+      try {
+        const out = await new K6Adapter({
+          artifacts,
+          config: { enabled: true, ratePerSec: 2, durationSec: 10 },
+          k6Path: K6_BIN,
+        }).run(ctx({ origin: fx.origin, mode: 'local-fixture' }, controller.signal));
+        expect(out).toMatchObject({ status: 'ERROR', errorCode: 'CANCELLED' });
+      } finally {
+        await fx.close();
+      }
+      await new Promise((r) => setTimeout(r, 500));
+      expect(countK6RunProcesses()).toBe(0);
+    },
+    60_000,
+  );
+  real(
+    'overload: server melewati timeout request k6 → FAIL (threshold), bukan PASS',
+    async () => {
+      const srv = await startFaultServer('overload');
+      try {
+        const out = await new K6Adapter({
+          artifacts,
+          config: { enabled: true, ratePerSec: 2, durationSec: 3 },
+          k6Path: K6_BIN,
+        }).run(ctx({ origin: srv.origin, mode: 'local-fixture' }));
+        expect(out.status).toBe('FAIL');
+        expect(out.metrics?.['observedRequests']).toBeGreaterThan(0);
+        expect(out.metrics?.['failedRate']).toBeGreaterThan(0.9);
+      } finally {
+        await srv.close();
+      }
+    },
+    120_000,
+  );
+  real(
+    'server error: setiap request 500 → FAIL (threshold gagal), bukan PASS; metrik kegagalan nyata',
+    async () => {
+      const srv = await startFaultServer('error');
+      try {
+        const out = await new K6Adapter({
+          artifacts,
+          config: { enabled: true, ratePerSec: 2, durationSec: 3 },
+          k6Path: K6_BIN,
+        }).run(ctx({ origin: srv.origin, mode: 'local-fixture' }));
+        expect(out.status).toBe('FAIL');
+        expect(out.metrics?.['observedRequests']).toBeGreaterThan(0);
+        expect(out.metrics?.['failedRate']).toBeGreaterThan(0.9);
+        expect(out.configSnapshot).toMatchObject({ abortOnFail: true, simulation: true });
+      } finally {
+        await srv.close();
       }
     },
     120_000,

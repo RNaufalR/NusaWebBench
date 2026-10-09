@@ -36,6 +36,8 @@ const ModuleEntrySchema = z.strictObject({
   toolName: z.string().max(100).nullable(),
   toolVersion: z.string().max(100).nullable(),
   metrics: z.record(z.string().max(64), z.number().finite()),
+  /** Kondisi test (simulasi, preset, batas). Kosong bila modul tidak mendeklarasikannya. */
+  configSnapshot: ConfigSnapshotSchema,
   errorCode: z.enum(MODULE_ERROR_CODES).nullable(),
   errorMessageSafe: z.string().max(500).nullable(),
   skippedReason: z.string().max(300).nullable(),
@@ -130,6 +132,7 @@ export function buildReport(input: ReportInput): Report {
       toolName: m.toolName,
       toolVersion: m.toolVersion,
       metrics: m.metrics,
+      configSnapshot: m.configSnapshot,
       errorCode: m.errorCode,
       errorMessageSafe: m.errorMessageSafe,
       skippedReason: m.skippedReason,
@@ -161,6 +164,13 @@ export function escapeHtml(value: string): string {
 }
 
 /** Metrik kosong ditampilkan N/A, bukan nol (taskbook §7.8). */
+function conditionCell(cfg: Record<string, string | number | boolean | null>): string {
+  const entries = Object.entries(cfg);
+  if (entries.length === 0) return '';
+  const text = entries.map(([k, v]) => `${escapeHtml(k)}=${escapeHtml(String(v))}`).join(', ');
+  return `<br><small>Kondisi test: ${text}</small>`;
+}
+
 function metricsCell(metrics: Record<string, number>): string {
   const entries = Object.entries(metrics);
   if (entries.length === 0) return 'N/A';
@@ -183,7 +193,7 @@ export function renderReportHtml(report: Report): string {
       (m) => `<tr>
 <th scope="row">${e(m.module)}</th>
 <td>${e(m.status)}${m.isNonResult ? ' (bukan hasil lulus)' : ''}</td>
-<td>${metricsCell(m.metrics)}</td>
+<td>${metricsCell(m.metrics)}${conditionCell(m.configSnapshot)}</td>
 <td>${e(m.errorCode ?? 'N/A')}</td>
 <td>${e(m.errorMessageSafe ?? m.skippedReason ?? 'N/A')}</td>
 <td>${e(m.toolName ?? 'N/A')} ${e(m.toolVersion ?? '')}</td>

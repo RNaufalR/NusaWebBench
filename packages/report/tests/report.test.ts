@@ -215,6 +215,36 @@ describe('laporan untuk run yang dibatalkan (negative T-200)', () => {
   });
 });
 
+describe('kondisi test pada laporan (T-150 instruksi 9)', () => {
+  it('kondisi simulasi dan batas dari modul tampil di HTML dan JSON, bukan dikarang', () => {
+    const k6Module = moduleResult({
+      module: 'LOAD_K6',
+      status: 'PASS',
+      toolName: 'k6',
+      toolVersion: '2.3.0',
+      configSnapshot: {
+        simulation: true,
+        preset: 'fixed-smoke',
+        maxVus: 2,
+        abortOnFail: true,
+      },
+    });
+    const report = buildFor({ modules: [k6Module] });
+    expect(report.modules[0]?.configSnapshot).toMatchObject({
+      simulation: true,
+      preset: 'fixed-smoke',
+    });
+    const html = renderReportHtml(report);
+    expect(html).toContain('Kondisi test: simulation=true, preset=fixed-smoke');
+    expect(html).toContain('abortOnFail=true');
+  });
+
+  it('modul tanpa kondisi test tidak menampilkan baris kondisi', () => {
+    const html = renderReportHtml(buildFor({ modules: [moduleResult()] }));
+    expect(html).not.toContain('Kondisi test:');
+  });
+});
+
 describe('render HTML', () => {
   it('HTML injection pada judul, deskripsi, dan URL di-escape', () => {
     const malicious = finding({

@@ -27,7 +27,7 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-120 | Groq adapter                                      | VERIFIED | T-010, T-020, T-030, T-060                      |
 | T-130 | AI router, capability registry, free-tier lock    | VERIFIED | T-110, T-120                                    |
 | T-140 | Dashboard MVP dan API routes                      | VERIFIED | T-030, T-040, T-050, T-060, T-080               |
-| T-150 | k6 adapter dan safety gates                       | EXECUTED | T-040, T-050, T-060, T-070, T-140               |
+| T-150 | k6 adapter dan safety gates                       | VERIFIED | T-040, T-050, T-060, T-070, T-140               |
 | T-160 | Strix adapter                                     | EXECUTED | T-040, T-050, T-060, T-070                      |
 | T-170 | Before/after comparison dan remediation proposals | VERIFIED | T-060, T-080, T-090, T-100, T-140               |
 | T-180 | Provider settings, usage, privacy controls        | VERIFIED | T-110, T-120, T-130, T-140                      |
@@ -37,7 +37,7 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-220 | CI, release checks, artifact validation           | VERIFIED | seluruh task rilis                              |
 | T-230 | Final acceptance audit dan release handoff        | EXECUTED | T-000 s.d. T-220                                |
 
-Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED` (21): T-000 s.d. T-100, T-110, T-120, T-130, T-140, T-170, T-180, T-190, T-200, T-210, T-220. `EXECUTED` (3): T-150, T-160, T-230 (lihat alasan di bagian masing-masing). `PLANNED`: 0.
+Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED` (22): T-000 s.d. T-100, T-110, T-120, T-130, T-140, T-150, T-170, T-180, T-190, T-200, T-210, T-220. `EXECUTED` (2): T-160 (runner Strix dan provider belum dapat diverifikasi di sandbox), T-230 (menunggu T-160 atau keputusan pengecualian pemilik). `PLANNED`: 0.
 
 ---
 
@@ -954,37 +954,69 @@ Known limitation: UI untuk "model config" dan "capability info" hanya menampilka
 
 ID: T-150
 Title: k6 adapter dan safety gates
-Status: EXECUTED
+Status: VERIFIED
 Depends on: T-040, T-050, T-060, T-070, T-140
 
-Files: `packages/load-k6/` (`src/k6.ts`, `tests/k6.test.ts`, 20 tes + 1 opt-in), `packages/load-k6/tsconfig.build.json`.
+Files: `packages/load-k6/` (`src/k6.ts`, `tests/k6.test.ts`: 20 tes dengan executable palsu + 4 tes nyata opt-in `K6_BIN`), `scripts/build-k6-verified.sh` (membangun binary dari sumber tag resmi, di luar Git).
 
-Yang sudah dibuktikan (`npx vitest run packages/load-k6` → 20 lulus, 1 dilewati):
+Binary yang diuji dan provenansinya:
 
-- Default `enabled: false` (SKIPPED `k6-disabled`); remote tanpa acknowledgement → SKIPPED; remote dengan acknowledgement → SCOPE_DENIED (gerbang kedua).
-- Preset tetap `fixed-smoke` saja; batas keras: VU ≤ 2, rate ≤ 5/detik, durasi ≤ 30 detik, rate × durasi ≤ 100 request. Stress/flood/spike ditolak.
-- Nilai non-integer, NaN, string, dan overflow ditolak; path dengan injeksi shell/JS, traversal, `//` (protocol-relative) ditolak.
-- Script k6 dibangun dari nilai tervalidasi dan `JSON.stringify`; tes memastikan baris target persis hasil serialisasi.
-- Proses dijalankan dengan argumen array, `shell: false`, dan lingkungan minimal (tanpa rahasia; tes canary).
-- Validasi ulang scope tepat sebelum spawn; executable diperiksa dengan `k6 version` (tool missing → UNAVAILABLE).
-- Cancel dan timeout membunuh proses (SIGTERM lalu SIGKILL); tes memastikan PID tidak hidup lagi.
-- Parser ringkasan memvalidasi bentuk JSON; metrik yang tidak ada tidak dikarang (tes `observedRequests` tidak diisi).
-- Exit 99 (threshold) → FAIL, bukan error tool; crash atau ringkasan rusak → ERROR TOOL_FAILED.
+- Versi: k6 v2.3.0 (rilis GitHub 2026-09-21). Digest resmi aset `k6-v2.3.0-linux-amd64.tar.gz` dari API GitHub: sha256 `39c3117b…`. Aset tidak diunduh karena `objects.githubusercontent.com` di luar allowlist.
+- Tag `v2.3.0` menunjuk ke commit `e0887846143ab176d4b5483c9d52cf3b3e009f1a` (API `git/tags` dan `git clone --branch v2.3.0` dari github.com; keduanya cocok).
+- Dibangun dari sumber dengan `go build -trimpath` dan `GOFLAGS=-mod=vendor` (dependensi ada di `vendor/` dalam commit tersebut, tanpa proxy modul). Output: `k6 v2.3.0 (commit/e088784614, go1.27.2, linux/amd64)`.
+- Toolchain Go 1.27.2 diambil dari wheel PyPI `go-bin` 1.27.2 (manylinux x86_64, sha256 `202ee8e0…` cocok dengan digest yang dicatat PyPI). Ini pihak ketiga dan belum diverifikasi terhadap go.dev (risiko R-K6-1).
+- Build diulang dari awal dengan `scripts/build-k6-verified.sh` dan menghasilkan versi yang sama.
+- Wheel PyPI `k6` 1.1.0 TIDAK digunakan. Pengarang dan homepage tidak tercantum, dan versinya tidak sama dengan v2.3.0.
 
-Yang BELUM dibuktikan (alasan BLOCKED sub-kriteria):
+Hasil tes nyata (`K6_BIN=/tmp/k6verify/k6 npx vitest run packages/load-k6` → 24 lulus, 0 dilewati; dijalankan dua kali berturut-turut, dan juga di dalam `npm run check` dengan `K6_BIN` terpasang):
 
-- Tes k6 nyata pada fixture lokal (`K6_BIN`) tidak dijalankan: binary k6 tidak dapat diunduh dari sandbox (host `objects.githubusercontent.com` di luar allowlist, diperiksa 2026-10-09). Paket PyPI bernama `k6` ditemukan, tetapi tidak memiliki metadata pengarang/homepage sehingga tidak dipercaya dan tidak dijalankan.
-- Tes "fixture lokal lulus" dengan k6 nyata karenanya belum ada bukti. Status tetap EXECUTED, bukan VERIFIED.
+- Fixture lokal `clean`, preset `fixed-smoke`: PASS dengan `observedRequests` > 0 dari ringkasan k6 nyata.
+- Server error (500 untuk setiap request): FAIL karena threshold `http_req_failed`, `failedRate` > 0,9. Bukan PASS.
+- Overload (server membalas setelah 7 detik, melewati timeout request k6 5 detik): FAIL, `failedRate` > 0,9.
+- Pembatalan setelah 1,5 detik: ERROR `CANCELLED`, dan tidak ada proses k6 `run` yang tertinggal (dicek dengan `ps` pada path K6_BIN).
 
-Catatan: dashboard MVP tidak menyambungkan LOAD_K6 (422 `MODULE_NOT_AVAILABLE`).
+Kriteria penerimaan:
 
-Verifikasi ulang (2026-10-09, sesi lanjutan):
+- Tes fixture lokal lulus dengan k6 nyata: terpenuhi.
+- Batas VU, rate, durasi, dan total request tidak bisa dilewati: terpenuhi. Skema membatasi nilai (integer, maks VU 2, maks rate 5/detik, maks durasi 30 detik, `rate × durasi` ≤ 100). Tes batas dan overflow lulus.
+- Remote memerlukan konfirmasi: terpenuhi. Tanpa acknowledgement → SKIPPED. Dengan acknowledgement → SCOPE_DENIED, karena MVP tidak mengizinkan remote untuk LOAD_K6.
+- Cancellation menghentikan k6: terpenuhi (tes nyata dan palsu).
+- Parser tidak mengarang metrik: terpenuhi. Metrik yang tidak ada di ringkasan tidak diisi.
 
-- Binary k6 resmi tetap tidak tersedia di sandbox. `github.com/grafana/k6/releases` terbaca lewat API, tetapi aset release berada di `objects.githubusercontent.com`, yang di luar allowlist.
-- npm: paket `k6` adalah dummy autocomplete (deskripsinya "Dummy package for autocompleting k6 scripts"), bukan binary. Paket `k6-baron` mengunduh binary dari GitHub saat instalasi dan tidak dipakai.
-- Sandbox tidak memiliki Go toolchain, sehingga membangun k6 dari sumber tidak dilakukan.
-- Clean clone (`91df536`, Node v24.21.0): `npm run check` lulus, termasuk tes adapter k6 dengan executable palsu. Tes k6 nyata tetap opt-in dan dilewati.
-- Status tetap EXECUTED. Bukti yang dibutuhkan: `K6_BIN=<path ke binary k6 resmi> npx vitest run packages/load-k6` lulus di mesin yang memiliki binary tersebut.
+Negative tests yang diwajibkan taskbook:
+
+- Out-of-scope / remote: SKIPPED atau SCOPE_DENIED (tes `target remote ...`), scope dicek ulang sebelum spawn.
+- Invalid VU, rate, durasi; integer overflow: ditolak (tes `VU, rate, dan durasi di luar batas`).
+- Shell injection dan traversal pada path: ditolak (tes path).
+- JS injection: nilai hanya masuk script lewat `JSON.stringify` dari nilai tervalidasi (tes script).
+- Tool missing: UNAVAILABLE `TOOL_MISSING`.
+- Cancellation: tes nyata dan palsu.
+- Malformed JSON atau summary rusak: ERROR `TOOL_FAILED`, tanpa metrik yang dikarang.
+- Server error dan overload: tes nyata (lihat di atas).
+
+Audit khusus:
+
+- Generated test script: hanya nilai tervalidasi, serialisasi `JSON.stringify`.
+- Process args: array, `shell: false`, lingkungan minimal tanpa rahasia (tes canary).
+- Numeric bounds: skema zod dengan batas keras dan tes overflow.
+- Kill switch: SIGTERM, lalu SIGKILL setelah 2 detik bila proses belum keluar. Hasil cancelled/timeout dikembalikan hanya setelah proses keluar (perubahan sesi ini).
+- Remote scope path: dua gerbang (`buildRunPlan` dan adapter) plus pengecekan scope sebelum dan sesudah spawn.
+- Total request cap: `rate × durasi` ≤ 100, dicek di skema.
+
+Perubahan pada sesi verifikasi ini:
+
+- Threshold sekarang `abortOnFail` dengan `delayAbortEval` 1 detik. Ini stop condition yang benar-benar menghentikan run, bukan hanya penilaian di akhir. Server error berhenti lebih cepat (tes server error selesai ±2 detik, sebelumnya ±3 detik).
+- Snapshot kondisi test (simulasi, preset, batas, stop condition, `plannedRequests`) disimpan di hasil modul dan ditampilkan di laporan (taskbook T-150 instruksi 9). Sebelumnya laporan tidak menyebut kondisi ini (tes `kondisi test pada laporan`).
+- Dugaan awal "proses yatim" pada tes pembatalan nyata ternyata kesalahan pendeteksi. Perintah shell sandbox yang memuat teks `summary-export` ikut terhitung. Pendeteksi kini mencocokkan executable K6_BIN. Pengukuran langsung: k6 keluar sekitar 0,02 detik setelah SIGTERM. Tidak ditemukan proses yatim. Perubahan menunggu proses keluar adalah pengerasan, dan sekarang dijaga oleh tes.
+
+Batasan:
+
+- Hanya k6 v2.3.0 yang diuji. Versi lain belum diuji (format ringkasan dan output `k6 version` bisa berbeda).
+- "Overload" diuji sebagai server yang melewati timeout request. Beban besar tidak diuji, dan memang dicegah oleh batas budget.
+- Stop condition berbasis threshold dan durasi scenario. Belum ada stop berbasis jumlah error absolut.
+- Remote tidak diizinkan pada MVP, sesuai taskbook dan README.
+- Dashboard belum menyambungkan LOAD_K6 (422 `MODULE_NOT_AVAILABLE`).
+- Binary tidak disimpan di repository.
 
 ---
 
@@ -1018,6 +1050,14 @@ Verifikasi ulang (2026-10-09, sesi lanjutan):
 - Docker tetap tidak tersedia di sandbox (`docker: command not found`). Runner Strix tidak dapat dibangun atau diverifikasi terhadap CLI aktual.
 - Tidak ada perubahan kode pada adapter Strix di sesi ini. Gerbang dan 8 tes tetap seperti sebelumnya.
 - Status tetap EXECUTED (BLOCKED untuk bagian runner dan tes SL-01). Bukti yang dibutuhkan: Docker di mesin lokal, versi Strix yang dipin, dan kompatibilitas provider yang dibuktikan dengan tes opt-in.
+
+Verifikasi ulang (2026-10-09, sesi verifikasi ketiga):
+
+- Docker: tidak tersedia. `download.docker.com` (sumber binary Docker) tidak dapat dijangkau (HTTP 000), dan repositori apt (`archive.ubuntu.com`) juga tidak dapat dijangkau. Sandbox memiliki sudo tanpa password, tetapi tanpa sumber paket Docker yang diizinkan, sudo tidak berguna.
+- Strix: paket PyPI `strix-agent` 1.7.0 ditemukan dan mensyaratkan Python ≥3.12. Sandbox hanya memiliki Python 3.11.2 (`/usr/bin/python3.11`). Tidak ada uv atau pyenv, dan sumber CPython 3.12 yang diizinkan tidak tersedia.
+- Provider: tidak ada kunci OpenRouter, Gemini, atau Groq untuk smoke test. Kompatibilitas provider tidak bisa dibuktikan tanpa panggilan nyata (taskbook T-160 instruksi 4).
+- Runner dan parser tidak diimplementasikan. Mengimplementasikannya tanpa CLI nyata berarti mengarang kontrak output, dan itu dilarang oleh taskbook.
+- Status tetap EXECUTED (BLOCKED). Untuk VERIFIED dibutuhkan: Docker daemon, Python ≥3.12, versi Strix yang dipin, kunci provider dengan budget, runner dan parser berdasarkan output CLI aktual, dan tes SL-01 opt-in pada `security-lab`.
 
 ---
 
@@ -1208,12 +1248,15 @@ Title: Final acceptance audit dan release handoff
 Status: EXECUTED
 Depends on: T-000 sampai T-220 (kecuali modul opsional yang secara eksplisit ditunda)
 
-Hasil: `RELEASE_AUDIT.md` diperbarui pada 2026-10-09. Gerbang wajib lulus pada clean clone `91df536` (Node v24.21.0). Retensi PASS sebagai library. Scenario, modul DEFERRED/BLOCKED, dan gap ditampilkan eksplisit.
+Hasil: `RELEASE_AUDIT.md` diperbarui. Gerbang wajib lulus pada clean clone, termasuk tes k6 nyata (v2.3.0). Retensi PASS sebagai library. Scenario, modul DEFERRED/BLOCKED, dan gap ditampilkan eksplisit.
 
 Alasan status EXECUTED (bukan VERIFIED):
 
-- Dependensi T-230 mencakup T-150 dan T-160 (EXECUTED: binary k6 nyata dan runner Strix tidak tersedia di sandbox). Taskbook membolehkan pengecualian hanya untuk modul opsional yang "secara eksplisit ditunda". Pengecualian itu belum ditetapkan pemilik proyek. Jika k6 dan Strix ditetapkan sebagai ditunda, T-230 dapat dipertimbangkan VERIFIED.
-- Keputusan rilis tetap "belum siap rilis penuh" sampai pemilik memutuskan pin Node (R-NODE-1) dan cakupan rilis (k6, Strix, AI live).
+- Dependensi T-230 mencakup T-160, yang masih EXECUTED/BLOCKED: runner Strix dan bukti provider tidak bisa dijalankan di sandbox (lihat T-160).
+- Taskbook membolehkan pengecualian hanya untuk modul opsional yang "secara eksplisit ditunda". Keputusan itu ada di tangan pemilik proyek, bukan agen. Dua pilihan:
+  1. Pemilik menetapkan Strix sebagai modul opsional yang ditunda untuk rilis ini. Dengan itu T-230 dapat dinyatakan VERIFIED, dan T-160 tetap tercatat BLOCKED dengan alasan di atas.
+  2. Tunggu bukti nyata Strix (Docker, Python ≥3.12, kunci provider). T-230 tetap EXECUTED.
+- Keputusan pin Node (R-NODE-1) juga masih terbuka dan tidak mengubah status T-230 secara langsung.
 
 ---
 
@@ -1268,6 +1311,8 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-RET-1 — Retensi hanya library (belum ada UI/CLI). Berkas `.tmp-*` yatim akibat crash keras belum dibersihkan. Status: terbuka.
 - R-PATCH-1 — Tes setelah patch dan approval hanya di level library. Belum ada UI dan belum ada alur persetujuan yang tersimpan. Status: terbuka.
 
+- R-K6-1 — Toolchain Go (1.27.2) untuk membangun k6 v2.3.0 diambil dari wheel PyPI `go-bin`, pihak ketiga, dan belum diverifikasi terhadap go.dev. Sumber k6 diverifikasi lewat tag dan commit resmi, dan dependensi berasal dari `vendor/` dalam commit tersebut. Mitigasi: skrip `scripts/build-k6-verified.sh` memakai Go yang dipasang pengguna sendiri. Status: terbuka (risiko kepercayaan toolchain, bukan risiko kode).
+- R-STRIX-1 — Strix nyata tidak dapat dijalankan di sandbox: Docker tidak tersedia, dan Strix butuh Python ≥3.12 (tidak tersedia). Tidak ada kunci provider untuk smoke test. Status: terbuka, BLOCKED.
 - R-TEST-3 (DITUTUP) — Urutan hasil modul tidak deterministik: `module_results` diurutkan `created_at, id` dengan `id` acak (UUID), sehingga dua hasil dengan `created_at` yang sama (milidetik) bisa tertukar. Gagal sekali pada CI browser job run `37893146541` (commit `7ae0513`): `expected ['FAIL','PASS'] to equal ['PASS','FAIL']` di `orchestrator.test.ts:242`. Perbaikan: urutan `created_at, rowid` (urutan penyisipan) untuk `module_results`, `findings`, dan `evidence`. Regresi: `storage.test.ts` "urutan hasil modul ... tidak acak" (gagal 3/3 dengan kode lama, lulus dengan perbaikan). Bukti: `packages/orchestrator` dan `packages/storage` lulus 5 kali berulang. Status: ditutup.
 
 - R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal intermiten di CI browser job. Kegagalan pertama tidak terulang dalam 6 run. Kegagalan kedua (run `37893511343`, commit `2bf538a`): `page.waitForFunction` dengan predikat string dievaluasi di halaman, dan CSP dashboard (`script-src 'self'`, tanpa `unsafe-eval`) memblokirnya saat polling. Perbaikan: `waitForStatus` memakai `locator.waitFor` (tanpa evaluasi string di halaman). CSP produksi tidak diubah. Hubungan dengan kegagalan pertama belum dapat dipastikan. Status: diperbaiki, dipantau.

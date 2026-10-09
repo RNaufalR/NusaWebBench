@@ -1,17 +1,17 @@
 # RELEASE_AUDIT — NusaWebBench
 
-- Tanggal audit: 2026-10-09 (Asia/Jakarta)
+- Tanggal audit: 2026-10-09 (Asia/Jakarta). Diperbarui setelah verifikasi T-150 (k6 nyata).
 - Branch: `arena/48bd00ed-nusawebbench`
 - Commit yang diaudit: `8bb2115` (clean clone dan uji gerbang). Riwayat perubahan sesi ini ada di bagian Lampiran.
 - Node untuk clean clone: v24.21.0 (`.nvmrc`). Sumber: paket npm `node-linux-x64@24.21.0`, tarball resmi Node. Sandbox sesi ini awalnya memakai Node v22.22.3 untuk pemasangan awal; hasil di sini diambil dari Node 24.
 - Chromium untuk tes lokal: Chromium 153 (`@sparticuz/chromium` di luar repo, `/tmp/chromium`). Tes CI memakai Chromium dari Playwright.
-- Bukti CI: run `37894195534` pada `8bb2115` (job quality dan browser keduanya success). Run sebelumnya gagal di browser job: `37893146541` (`7ae0513`, flake urutan R-TEST-3) dan `37893511343`/`2bf538a` (UI CSP, R-TEST-2). Keduanya sudah diperbaiki.
+- Bukti CI (sebelum perubahan k6): run `37894195534` pada `8bb2115` (job quality dan browser keduanya success). Run sebelumnya gagal di browser job: `37893146541` (`7ae0513`, flake urutan R-TEST-3) dan `37893511343`/`2bf538a` (UI CSP, R-TEST-2). Keduanya sudah diperbaiki.
 
 ## Keputusan rilis
 
 **BELUM siap rilis penuh.** Gerbang wajib lulus pada clean clone. Namun tiga hal memerlukan keputusan pemilik proyek sebelum rilis:
 
-1. **Cakupan k6 dan Strix**: keduanya BLOCKED untuk eksekusi nyata di sandbox (binary k6 resmi dan Docker tidak tersedia). Jika pemilik menetapkannya sebagai modul opsional yang ditunda, T-150, T-160, dan T-230 dapat dinilai ulang.
+1. **Cakupan Strix**: k6 sudah diverifikasi dengan binary nyata (v2.3.0, dibangun dari sumber tag resmi). Strix tetap BLOCKED: Docker tidak tersedia, Strix membutuhkan Python ≥3.12 (sandbox hanya 3.11), dan tidak ada kunci provider untuk smoke test. Pilihan pemilik: (a) menetapkan Strix sebagai modul opsional yang ditunda secara eksplisit untuk rilis ini, sehingga T-160 tetap BLOCKED dan T-230 dapat VERIFIED; atau (b) menunggu bukti Strix nyata, sehingga T-230 tetap EXECUTED.
 2. **Pin Node (R-NODE-1)**: Node 24 sudah EOL menurut nodejs.org (2026-09-07). Pin belum diganti karena memerlukan revisi ADR-0002 dan verifikasi ulang toolchain.
 3. **AI live**: tes live Gemini dan Groq belum dijalankan (kunci dan opt-in pengguna belum tersedia). Endpoint dan header Gemini sudah terkonfirmasi dari dokumen. Header Bearer Groq belum.
 
@@ -53,19 +53,19 @@
 
 ## Modul opsional dan yang ditunda (ditampilkan eksplisit)
 
-| Modul / jalur                      | Status   | Alasan                                                                                                                                                                                          |
-| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Gemini (live)                      | DEFERRED | Tes live manual opt-in (`AI_LIVE_TESTS=1`), tidak dijalankan: tidak ada kunci dan belum ada opt-in pengguna. Endpoint dan header terkonfirmasi dari dokumen (2026-10-09).                       |
-| Groq (live)                        | DEFERRED | Sama seperti Gemini. Endpoint terkonfirmasi. Header Bearer belum terbaca dari halaman yang diambil.                                                                                             |
-| k6 (nyata, fixture)                | BLOCKED  | Binary k6 resmi tidak dapat diunduh dari sandbox (`objects.githubusercontent.com` di luar allowlist). Paket npm `k6` adalah dummy autocomplete. Adapter diuji dengan executable palsu (20 tes). |
-| Strix (nyata)                      | BLOCKED  | Docker tidak tersedia di sandbox. Runner belum diverifikasi terhadap CLI aktual (`security-strix`, gerbang saja).                                                                               |
-| Dashboard: LOAD_K6, SECURITY_STRIX | DEFERRED | Belum disambungkan ke dashboard (422 `MODULE_NOT_AVAILABLE`).                                                                                                                                   |
-| Before/after di UI                 | DEFERRED | Library `packages/compare` tersedia dan sudah diuji (tes setelah patch, baseline, record). Belum ada UI.                                                                                        |
-| Retensi di UI/CLI                  | DEFERRED | Library `packages/storage/src/retention.ts` tersedia. Belum ada tombol atau perintah.                                                                                                           |
+| Modul / jalur                      | Status   | Alasan                                                                                                                                                                                                                                                 |
+| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Gemini (live)                      | DEFERRED | Tes live manual opt-in (`AI_LIVE_TESTS=1`), tidak dijalankan: tidak ada kunci dan belum ada opt-in pengguna. Endpoint dan header terkonfirmasi dari dokumen (2026-10-09).                                                                              |
+| Groq (live)                        | DEFERRED | Sama seperti Gemini. Endpoint terkonfirmasi. Header Bearer belum terbaca dari halaman yang diambil.                                                                                                                                                    |
+| k6 (nyata, fixture)                | PASS     | k6 v2.3.0 dibangun dari commit tag resmi `e0887846` (`scripts/build-k6-verified.sh`). 24 tes lulus dengan `K6_BIN`: fixture PASS, server error dan overload menjadi FAIL, pembatalan nyata tanpa proses tertinggal. Lihat IMPLEMENTATION_STATUS T-150. |
+| Strix (nyata)                      | BLOCKED  | Docker tidak tersedia (download.docker.com dan apt tidak dapat dijangkau). Strix (`strix-agent` 1.7.0) butuh Python ≥3.12, sedangkan sandbox hanya 3.11. Tidak ada kunci provider. Runner belum diimplementasikan (`security-strix`, gerbang saja).    |
+| Dashboard: LOAD_K6, SECURITY_STRIX | DEFERRED | Belum disambungkan ke dashboard (422 `MODULE_NOT_AVAILABLE`).                                                                                                                                                                                          |
+| Before/after di UI                 | DEFERRED | Library `packages/compare` tersedia dan sudah diuji (tes setelah patch, baseline, record). Belum ada UI.                                                                                                                                               |
+| Retensi di UI/CLI                  | DEFERRED | Library `packages/storage/src/retention.ts` tersedia. Belum ada tombol atau perintah.                                                                                                                                                                  |
 
 ## Gap yang terbuka (wajib dipertimbangkan sebelum rilis)
 
-1. **k6 dan Strix nyata** (T-150, T-160): belum ada bukti pada fixture lokal (BLOCKED). Perlu keputusan cakupan (lihat Keputusan rilis).
+1. **Strix nyata** (T-160): BLOCKED. Perlu keputusan cakupan (lihat Keputusan rilis). k6 nyata sudah terbukti pada v2.3.0. Versi k6 lain belum diuji.
 2. **Node 24 EOL** (R-NODE-1): perlu keputusan pin, lalu verifikasi ulang toolchain.
 3. **Tes live Gemini dan Groq** belum dijalankan (R-AI-2). Endpoint Gemini dan Groq sudah terkonfirmasi. Header Bearer Groq belum.
 4. **Kelayakan free tier per model** belum diverifikasi (R-AI-3). AI tetap tidak aktif sampai registry diubah secara sadar.
@@ -112,3 +112,11 @@
 4. Putuskan apakah retensi perlu UI/CLI sebelum rilis, dan apakah approval patch perlu alur tersimpan.
 5. Cek ulang tautan Lighthouse configuration docs.
 6. Verifikasi CI pada commit terbaru (`gh run list --branch arena/48bd00ed-nusawebbench`).
+
+## Lampiran tambahan: verifikasi T-150 (k6 nyata)
+
+- Binary: k6 v2.3.0, dibangun dari tag `v2.3.0` → commit `e0887846143ab176d4b5483c9d52cf3b3e009f1a` dengan `-mod=vendor`. Toolchain Go 1.27.2 dari PyPI `go-bin` (pihak ketiga, R-K6-1). Digest resmi aset GitHub dicatat sebagai referensi (`39c3117b…`).
+- Hasil: `K6_BIN=… npx vitest run packages/load-k6` → 24 lulus. Gerbang penuh `npm run check` dengan `K6_BIN` → 536 lulus, 1 dilewati (opt-in AI live), secret scan `findings=0`.
+- Perbaikan sesi ini: threshold `abortOnFail` (stop condition nyata), snapshot kondisi test ke hasil modul dan laporan (instruksi 9), hasil pembatalan/timeout menunggu proses keluar.
+- Koreksi: dugaan "proses k6 yatim" pada tes pembatalan nyata berasal dari pendeteksi yang terlalu luas (teks sandbox ikut terhitung). Pendeteksi sekarang mencocokkan executable K6_BIN. Pengukuran langsung: k6 keluar sekitar 0,02 detik setelah SIGTERM.
+- Strix: tidak berubah (BLOCKED). Lihat T-160 di IMPLEMENTATION_STATUS.

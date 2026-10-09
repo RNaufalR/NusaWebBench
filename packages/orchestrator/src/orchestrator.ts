@@ -28,6 +28,8 @@ export type ModuleOutcome = {
   readonly artifactRefs?: readonly string[];
   readonly toolName?: string | null;
   readonly toolVersion?: string | null;
+  /** Kondisi test yang dijalankan (simulasi, preset, batas). Dicatat ke hasil modul dan laporan. */
+  readonly configSnapshot?: Readonly<Record<string, string | number | boolean | null>>;
   readonly errorCode?: ModuleErrorCode | null;
   readonly errorMessageSafe?: string | null;
   readonly skippedReason?: string | null;
@@ -602,7 +604,7 @@ export class RunOrchestrator {
         durationMs,
         toolName: outcome.toolName ?? null,
         toolVersion: outcome.toolVersion ?? null,
-        configSnapshot: {},
+        configSnapshot: { ...(outcome.configSnapshot ?? {}) },
         metrics: isResult ? { ...(outcome.metrics ?? {}) } : {},
         findingIds: isResult ? [...findingIds] : [],
         artifactRefs: [...(outcome.artifactRefs ?? [])],
