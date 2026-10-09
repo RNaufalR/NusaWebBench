@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -42,6 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
   store.close();
+  rmSync(dir, { recursive: true, force: true });
 });
 
 function makeTarget() {

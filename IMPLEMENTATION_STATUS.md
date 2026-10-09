@@ -29,15 +29,15 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-140 | Dashboard MVP dan API routes                      | VERIFIED | T-030, T-040, T-050, T-060, T-080               |
 | T-150 | k6 adapter dan safety gates                       | EXECUTED | T-040, T-050, T-060, T-070, T-140               |
 | T-160 | Strix adapter                                     | EXECUTED | T-040, T-050, T-060, T-070                      |
-| T-170 | Before/after comparison dan remediation proposals | EXECUTED | T-060, T-080, T-090, T-100, T-140               |
+| T-170 | Before/after comparison dan remediation proposals | VERIFIED | T-060, T-080, T-090, T-100, T-140               |
 | T-180 | Provider settings, usage, privacy controls        | VERIFIED | T-110, T-120, T-130, T-140                      |
 | T-190 | Security hardening dan threat-model verification  | VERIFIED | T-040 s.d. T-180                                |
-| T-200 | Low-resource behavior, reliability, cleanup       | EXECUTED | T-050, T-060, T-080, T-090, T-140, T-150, T-160 |
-| T-210 | Documentation and onboarding                      | EXECUTED | T-010 s.d. T-200                                |
+| T-200 | Low-resource behavior, reliability, cleanup       | VERIFIED | T-050, T-060, T-080, T-090, T-140, T-150, T-160 |
+| T-210 | Documentation and onboarding                      | VERIFIED | T-010 s.d. T-200                                |
 | T-220 | CI, release checks, artifact validation           | VERIFIED | seluruh task rilis                              |
 | T-230 | Final acceptance audit dan release handoff        | EXECUTED | T-000 s.d. T-220                                |
 
-Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED` (18): T-000 s.d. T-100, T-110, T-120, T-130, T-140, T-180, T-190, T-220. `EXECUTED` (6): T-150, T-160, T-170, T-200, T-210, T-230 (lihat alasan di bagian masing-masing). `PLANNED`: 0.
+Jumlah task: 24 (T-000 s.d. T-230). `VERIFIED` (21): T-000 s.d. T-100, T-110, T-120, T-130, T-140, T-170, T-180, T-190, T-200, T-210, T-220. `EXECUTED` (3): T-150, T-160, T-230 (lihat alasan di bagian masing-masing). `PLANNED`: 0.
 
 ---
 
@@ -978,6 +978,14 @@ Yang BELUM dibuktikan (alasan BLOCKED sub-kriteria):
 
 Catatan: dashboard MVP tidak menyambungkan LOAD_K6 (422 `MODULE_NOT_AVAILABLE`).
 
+Verifikasi ulang (2026-10-09, sesi lanjutan):
+
+- Binary k6 resmi tetap tidak tersedia di sandbox. `github.com/grafana/k6/releases` terbaca lewat API, tetapi aset release berada di `objects.githubusercontent.com`, yang di luar allowlist.
+- npm: paket `k6` adalah dummy autocomplete (deskripsinya "Dummy package for autocompleting k6 scripts"), bukan binary. Paket `k6-baron` mengunduh binary dari GitHub saat instalasi dan tidak dipakai.
+- Sandbox tidak memiliki Go toolchain, sehingga membangun k6 dari sumber tidak dilakukan.
+- Clean clone (`91df536`, Node v24.21.0): `npm run check` lulus, termasuk tes adapter k6 dengan executable palsu. Tes k6 nyata tetap opt-in dan dilewati.
+- Status tetap EXECUTED. Bukti yang dibutuhkan: `K6_BIN=<path ke binary k6 resmi> npx vitest run packages/load-k6` lulus di mesin yang memiliki binary tersebut.
+
 ---
 
 ## T-160 — Strix adapter
@@ -1005,30 +1013,54 @@ Yang BELUM dibuktikan (BLOCKED):
 - Runner Strix dan parser output belum diimplementasikan. Kontrak CLI/format output harus diverifikasi terhadap versi aktual, dan itu membutuhkan Docker (tidak tersedia di sandbox).
 - Tes SL-01 pada `security-lab` tidak dijalankan. Kompatibilitas Gemini/Groq dengan Strix belum dibuktikan.
 
+Verifikasi ulang (2026-10-09, sesi lanjutan):
+
+- Docker tetap tidak tersedia di sandbox (`docker: command not found`). Runner Strix tidak dapat dibangun atau diverifikasi terhadap CLI aktual.
+- Tidak ada perubahan kode pada adapter Strix di sesi ini. Gerbang dan 8 tes tetap seperti sebelumnya.
+- Status tetap EXECUTED (BLOCKED untuk bagian runner dan tes SL-01). Bukti yang dibutuhkan: Docker di mesin lokal, versi Strix yang dipin, dan kompatibilitas provider yang dibuktikan dengan tes opt-in.
+
 ---
 
 ## T-170 — Before/after comparison dan remediation proposals
 
 ID: T-170
 Title: Before/after comparison dan remediation proposals
-Status: EXECUTED
+Status: VERIFIED
 Depends on: T-060, T-080, T-090, T-100, T-140
 
-Files: `packages/compare/` (`src/compare.ts`, `src/patch.ts`, `tests/compare.test.ts`, 22 tes).
+Files: `packages/compare/` (`src/compare.ts`, `src/patch.ts`, `tests/compare.test.ts`, 23 tes).
 
-Yang sudah dibuktikan:
+Bukti (`npx vitest run packages/compare` → 23 lulus; clean clone `91df536` pada Node v24.21.0 → `npm run check` lulus):
 
-- Perbandingan: kunci temuan `ruleId|selector|targetUrl`; temuan hilang dengan bukti sah → FIXED_VERIFIED; tanpa bukti (modul ERROR/UNAVAILABLE) → FIXED_UNVERIFIED; temuan baru → REGRESSION.
-- Tidak comparable (origin atau viewport berbeda) diberi blocker; versi aturan/alat atau konfigurasi berbeda diberi warning dan menurunkan klaim ke LIKELY/FIXED_UNVERIFIED (keputusan: klaim kuat hanya bila perbandingan sepenuhnya sebanding).
-- Temuan SUPPRESSED tidak dihitung sebagai OPEN.
-- Panduan remediasi berbasis URL hanya menyusun teks dan tidak mengirim request.
-- Proposal patch lewat `git worktree` sementara: menolak repo kotor (perubahan pengguna), path di luar akar repo (absolut, `..`, `.git`, backslash), revisi dasar tidak valid, diff berisi pola rahasia; repo pengguna tidak berubah; rollback menghapus worktree.
+- Perbandingan: kunci temuan `ruleId|selector|targetUrl`. Temuan hilang dengan bukti sah → FIXED_VERIFIED. Tanpa bukti (modul ERROR/UNAVAILABLE) → FIXED_UNVERIFIED. Temuan baru → REGRESSION bila sebanding.
+- Tidak comparable (origin atau viewport berbeda) → blocker (`comparable: false`). Versi alat/aturan atau konfigurasi berbeda → warning, dan klaim diturunkan ke LIKELY/FIXED_UNVERIFIED. Tabel perbedaan ditampilkan lewat `blockers` dan `warnings`.
+- Baseline dan tes sebelum/sesudah (`91df536`): `runChecksAtBase` menjalankan cek di revisi dasar pada worktree sementara, lalu worktree dibuang. `runPostPatchChecks` menjalankan cek di worktree patch.
+- Verdict tes setelah patch: `PASSED` hanya bila ada minimal satu cek dan semuanya `PASSED`. Selain itu `NOT_VERIFIED`. Status per cek: `PASSED`, `FAILED` (exit code), `TIMEOUT` (SIGKILL), `ERROR` (executable tidak ada atau gagal dijalankan).
+- Keamanan cek: argv terstruktur tanpa shell, lingkungan minimal tanpa rahasia, timeout maksimum 600 detik, maksimum 10 cek, keluaran diredaksi dan dipotong 2000 karakter. Definisi cek tidak valid ditolak sebelum berjalan.
+- Record proposal (`buildProposalRecord`): base revision, `initialWorkingTreeClean: true`, changedFiles, SHA-256 diff, testsBefore, testsAfter, `approval: 'PENDING'`, `applied: false`. Tidak ada merge, commit, atau apply.
+- Patch: repo kotor ditolak (CONFLICT). Path absolut, `..`, `.git`, dan backslash ditolak. Revisi dasar tidak valid ditolak. Diff yang memuat pola rahasia ditolak dan worktree dibuang. Repo pengguna tidak berubah. Rollback menghapus worktree.
+- Guidance berbasis URL hanya menyusun teks dan tidak mengirim request.
 
-Yang BELUM dibuktikan:
+Negative tests yang diuji:
 
-- "Jalankan test relevan dan security checks setelah patch" belum diimplementasikan.
-- Tidak ada integrasi ke UI dashboard. Fungsi ini tersedia sebagai library.
-- Tidak ada uji untuk "Git unavailable" secara langsung (galat dipetakan ke TOOL_FAILED, tetapi belum diuji).
+- Uncommitted user changes → CONFLICT (repo tidak berubah).
+- Git tidak tersedia (PATH kosong) → TOOL_FAILED; repo tidak berubah.
+- Worktree gagal dibuat (revisi tidak ada) → TOOL_FAILED.
+- Partial patch (penulisan file kedua gagal setelah file pertama tertulis) → TOOL_FAILED; worktree dibuang; repo utuh. Temuan saat audit: kegagalan tulis sebelumnya tidak terpetakan ke error terstruktur. Sekarang dipetakan ke TOOL_FAILED.
+- Tes gagal setelah patch → `NOT_VERIFIED`, status FAILED dengan exit code.
+- Timeout cek → TIMEOUT; proses dibunuh.
+- Executable tes hilang → ERROR; bukan PASSED.
+- Path di luar repo root → VALIDATION_FAILED sebelum apa pun berjalan.
+- Secret ditambahkan lewat diff → VALIDATION_FAILED; worktree dibuang.
+- Perubahan lingkungan → diwakili oleh perbandingan versi/konfigurasi (warning). Tidak ada pengukuran ulang lingkungan saat patch.
+
+Yang tidak termasuk dan dicatat sebagai batasan:
+
+- Tidak ada UI dashboard untuk perbandingan atau proposal. Fitur ini tersedia sebagai library.
+- Tidak ada alur persetujuan manusia yang tersimpan di sistem. Approval hanya tercatat `PENDING` pada record. Penerapan patch ke repo pengguna belum ada dan tidak akan dilakukan tanpa persetujuan terpisah.
+- "Security checks" setelah patch adalah perintah yang ditentukan pemanggil. Tidak ada pemindai bawaan.
+- Cek pasca-patch menjalankan kode dari repository di dalam worktree (misalnya `npm test`). Ini hanya aman untuk repository yang dipercaya pemiliknya. Proses tidak diisolasi di level OS.
+- `FIXED_VERIFIED` bergantung pada bukti baseline yang sebanding. Tidak ada otomatisasi yang menghasilkan bukti sebelum patch di UI.
 
 ---
 
@@ -1036,24 +1068,33 @@ Yang BELUM dibuktikan:
 
 ID: T-200
 Title: Low-resource behavior, reliability, dan cleanup
-Status: EXECUTED
+Status: VERIFIED
 Depends on: T-050, T-060, T-080, T-090, T-140, T-150, T-160
 
-Yang sudah ada dan diuji:
+Bukti:
 
-- Default satu run aktif (antrean orchestrator; run lain QUEUED). Satu browser context per modul browser; modul berurutan.
-- Batas artefak 50 MiB per berkas (`MAX_ARTIFACT_BYTES`); batas laporan (`MAX_REPORT_BYTES`); batas body API 16 KB; batas respons provider AI 1 MB; batas output AI 16.000 karakter.
-- Batas memori log progres orchestrator: 2000 entri terbaru (`MAX_PROGRESS_ENTRIES`, ditambahkan di T-200).
-- Timeout proses (k6 dan Strix gate), SIGTERM/SIGKILL, dan tes tidak ada proses yatim (k6).
-- Direktori kerja sementara k6 dihapus pada akhir run (tes). Worktree sementara dihapus pada rollback (tes).
-- Diagnostik lokal `GET /api/diagnostics` (disk writable, DB, tool) tanpa telemetri jarak jauh (tes: tidak memuat rahasia).
+- Retention artefak (`packages/storage/src/retention.ts`, tes `packages/storage/tests/retention.test.ts`, 9 tes):
+  - `previewRetention` hanya merencanakan dan tidak menghapus apa pun. Batas umur 1 sampai 3650 hari. Maksimum 500 kandidat per preview, dengan flag `truncated`.
+  - Run RUNNING dan QUEUED dilewati (`run-active`). Run yang tidak ada dilewati (`run-missing`).
+  - `applyRetention` menolak konfirmasi yang tidak cocok dengan `planId` dan rencana yang diubah (`VALIDATION_FAILED`). Ini diuji dengan kandidat yang disisipkan.
+  - Apply memverifikasi ulang tiap kandidat (metadata, sha256, path) dan melewati yang berubah (`changed-since-preview`).
+  - Apply menghapus byte berkas dan mempertahankan metadata evidence. Pembacaan berikutnya gagal dengan aman (`missing-file`).
+  - Symlink di dalam root yang menunjuk keluar root ditolak (`path-rejected`). Berkas di luar root tetap utuh.
+- Batas sumber daya yang sudah ada dan diuji: artefak 50 MiB (`PAYLOAD_TOO_LARGE`), batas laporan, batas body API 16 KB, batas respons provider AI 1 MB, batas output AI 16.000 karakter, dan `MAX_PROGRESS_ENTRIES` 2000.
+- Satu run aktif (run kedua berstatus QUEUED sampai run pertama selesai). Modul berjalan berurutan dengan satu browser context per modul browser.
+- Cancel dan timeout: k6 membunuh proses (SIGTERM lalu SIGKILL) dengan tes PID tidak hidup lagi. Browser: timeout, crash, dan cancel menghasilkan ERROR yang sesuai (`packages/browser-qa/tests/negative.test.ts`, dijalankan dengan Chromium 153 pada sandbox dan di CI browser job). Worktree sementara dibuang saat rollback dan saat `runChecksAtBase` selesai.
+- Laporan untuk run yang dibatalkan (`packages/report/tests/report.test.ts`): run CANCELLED dengan modul CANCELLED menghasilkan laporan valid dan tidak ada PASS palsu.
+- Diagnostik lokal `GET /api/diagnostics` (disk, DB, tool) tanpa telemetri. Tidak memuat rahasia.
+- Kebersihan tes: `packages/storage/tests/storage.test.ts` sebelumnya meninggalkan direktori `nwb-db-*` di tmp. Sekarang dihapus pada `afterEach`.
+- Gerbang sesi ini (`91df536` plus perubahan dokumentasi): `npm run check` lulus. Suite penuh dengan `CHROMIUM_PATH=/tmp/chromium REQUIRE_BROWSER_TESTS=1 NWB_CHROME_NO_SANDBOX=1` (Chromium 153): 529 lulus, 2 dilewati (tes k6 nyata dan live AI, opt-in).
 
-Yang BELUM ada atau BELUM diuji:
+Batasan (dicatat):
 
-- Retention/cleanup artefak dengan preview belum diimplementasikan. Kriteria "retention berada di artifact root; cleanup dapat dipreview" belum terpenuhi.
-- Batas jumlah screenshot tidak relevan karena UX_RULES tidak mengambil screenshot; batas crawl/halaman untuk FUNCTIONAL_QA ada di kode (antrean 200) tetapi tidak diuji ulang di task ini.
-- Benchmark resource lokal TIDAK dilakukan. Tidak ada angka performa yang diklaim.
-- Skenario disk penuh dan browser crash belum disimulasikan.
+- Retention hanya tersedia sebagai library. Belum ada tombol di dashboard atau perintah CLI. Preview tersedia lewat `previewRetention`.
+- Skenario disk penuh (ENOSPC) tidak disimulasikan. Taskbook menyebutnya "jika memungkinkan". Penulisan terputus disimulasikan lewat hook `beforeCommit` (`packages/storage/tests/artifacts.test.ts`) dan tidak meninggalkan berkas yatim.
+- Berkas `.tmp-*` yatim akibat crash keras proses (bukan kegagalan tulis yang tertangkap) tidak dibersihkan oleh retention. Belum ada mekanisme untuk itu.
+- Retention tidak menghapus metadata evidence. Laporan yang merujuk artefak yang sudah dihapus akan menampilkan berkas hilang.
+- Benchmark resource lokal tidak dilakukan. Tidak ada angka performa yang diklaim.
 
 ---
 
@@ -1097,22 +1138,41 @@ Catatan jujur: pengujian SSRF/redirect/IP privat secara ekstensif berada pada `p
 
 ID: T-210
 Title: Documentation and onboarding
-Status: EXECUTED
+Status: VERIFIED
 Depends on: T-010 sampai T-200
 
-Yang sudah dibuat dan diuji:
+Yang dibuat dan diuji:
 
-- `README.md`: ikhtisar produk, batasan, prasyarat, instalasi, quality gates, dashboard, core tanpa AI, provider AI (opt-in), fixture dan ground truth, target remote, risiko k6, batasan Strix, perbandingan/remediasi, dan tautan dokumentasi. Setiap perintah yang tertulis sudah dijalankan dari clone bersih: `npm ci`, `npm run check`, `npm run build`, `npm run web` (health dan diagnostics merespons).
-- `.env.example`: nama variabel aman, default aman, dan opsional tanpa nilai rahasia (`CHROMIUM_PATH`, `K6_BIN`, `NWB_CHROME_NO_SANDBOX`, `ALLOWED_HOSTS`).
+- `README.md`: ikhtisar, batasan, prasyarat, instalasi, quality gates, dashboard, core tanpa AI, provider AI (opsional), fixture, target remote, risiko k6, batasan Strix, perbandingan dan retensi (library), dan tautan dokumentasi.
+- `.env.example`: nama variabel aman, default aman, dan opsional tanpa nilai rahasia.
 - `SECURITY.md`: cakupan, pelaporan, prosedur uji aman, batasan, dan tabel ancaman → kendali → bukti.
-- `docs/decisions/`: ADR-0004 (kebijakan AI), ADR-0005 (dashboard loopback). ADR-0001 sampai 0003 sudah ada.
-- `IMPLEMENTATION_STATUS.md`: status per task dengan bukti.
+- `docs/decisions/`: ADR-0001 sampai 0005.
 
-Belum terpenuhi:
+Bukti (sesi 2026-10-09):
 
-- Pemeriksaan tautan resmi belum dijalankan (sebagian tautan berada di luar allowlist sandbox).
-- Pemeriksaan "outdated model names" hanya untuk registry; README menyebut verifikasi ulang endpoint Gemini/Groq sebagai langkah wajib (R-AI-2).
-- README menyatakan Node 24 dengan peringatan EOL (R-NODE-1). Pin belum diganti.
+- Clean clone `91df536` pada Node v24.21.0 (paket npm `node-linux-x64@24.21.0`, tarball resmi Node yang dipaketkan di registry npm):
+  - `npm ci` (exit 0).
+  - `npm run check` dengan `CHROMIUM_PATH` (Chromium 153), `REQUIRE_BROWSER_TESTS=1`, dan `NWB_CHROME_NO_SANDBOX=1` (exit 0).
+  - `npm run build` (exit 0).
+  - Smoke dashboard (`node packages/web/dist/main.js`, 127.0.0.1:4178): `GET /api/health` → `{"ok":true}`. `GET /api/diagnostics` memuat database reachable, artifacts writable, dan `telemetry: tidak ada`. Request dengan Host asing → 403.
+- Perintah README yang diuji: `npm ci`, `npm run check`, `npm run build`, `npm run web` (health dan diagnostics), dan `CHROMIUM_PATH=... REQUIRE_BROWSER_TESTS=1 npx vitest run`.
+- Tautan resmi (diperiksa 2026-10-09):
+  - https://ai.google.dev/gemini-api/docs/rate-limits dan https://ai.google.dev/api/generate-content: endpoint Gemini terkonfirmasi di bagian "Endpoint" pada `models.generateContent` (chunk 3).
+  - https://ai.google.dev/gemini-api/docs/api-key: header `x-goog-api-key` terkonfirmasi pada contoh REST. Halaman diperbarui 2026-10-06 UTC. Kunci standar tanpa pembatasan ditolak dan auth key adalah default baru.
+  - https://console.groq.com/docs/api-reference: endpoint `POST https://api.groq.com/openai/v1/chat/completions`, `max_completion_tokens`, `n` hanya 1, `stream` default false.
+  - https://console.groq.com/docs/rate-limits dan https://console.groq.com/docs/quickstart: rate limit per organisasi, 429, dan `GROQ_API_KEY`. Header Bearer tidak terbaca (contoh curl ada di tab yang tidak terambil).
+  - https://playwright.dev/docs/intro: terbuka. Menyebut Node.js 22.x, 24.x, dan 26.x sebagai system requirement.
+  - https://nodejs.org/en/about/previous-releases: Node 24 EOL 2026-09-07 (diperiksa sebelumnya pada sesi ini).
+  - https://github.com/usestrix/strix: Apache-2.0, container Docker, default model OpenRouter.
+  - https://github.com/GoogleChrome/lighthouse/blob/main/docs/configuration.md: 504 pada percobaan ini. Belum terverifikasi dan perlu dicek ulang.
+- Nama model Gemini di registry (`gemini-3.8-flash`) sesuai banner di halaman rate-limit (2026-10-09). Nama model Groq (`openai/gpt-oss-20b`) sesuai daftar di halaman rate-limit (2026-10-09).
+
+Catatan dan batasan:
+
+- Node 24 sudah EOL menurut nodejs.org (R-NODE-1). Pin belum diganti karena itu keputusan pemilik proyek. README menyatakan ini secara eksplisit.
+- Free tier per model belum diverifikasi (R-AI-3). Semua entri registry bawaan `freeTierAllowlisted: false`, sehingga AI tidak aktif.
+- Tes live Gemini dan Groq belum dijalankan (memerlukan kunci dan opt-in pengguna).
+- Pemeriksaan tautan belum lengkap. Lighthouse configuration docs belum terbaca.
 
 ---
 
@@ -1146,18 +1206,14 @@ Catatan jujur:
 ID: T-230
 Title: Final acceptance audit dan release handoff
 Status: EXECUTED
-Depends on: T-000 sampai T-220 (kecuali modul opsional yang ditunda)
+Depends on: T-000 sampai T-220 (kecuali modul opsional yang secara eksplisit ditunda)
 
-Hasil: `RELEASE_AUDIT.md` dibuat dengan checklist pass/fail/blocked, perintah, versi, bukti, batasan, dan risiko. Clean install, gerbang wajib, smoke dashboard, dan CI sudah diverifikasi.
+Hasil: `RELEASE_AUDIT.md` diperbarui pada 2026-10-09. Gerbang wajib lulus pada clean clone `91df536` (Node v24.21.0). Retensi PASS sebagai library. Scenario, modul DEFERRED/BLOCKED, dan gap ditampilkan eksplisit.
 
 Alasan status EXECUTED (bukan VERIFIED):
 
-- Retention/cleanup dengan preview (T-200) belum diimplementasikan. Gerbang "retention behavior" berstatus FAIL.
-- T-150 (k6 nyata), T-160 (Strix nyata), dan T-170 (test setelah patch) belum VERIFIED. Modul opsional yang ditunda sudah ditampilkan sebagai DEFERRED/BLOCKED, tetapi T-170 bukan opsional menurut taskbook.
-- R-NODE-1 (Node 24 EOL) memerlukan keputusan pemilik proyek.
-- Tes live Gemini/Groq belum dijalankan (DEFERRED, opt-in).
-
----
+- Dependensi T-230 mencakup T-150 dan T-160 (EXECUTED: binary k6 nyata dan runner Strix tidak tersedia di sandbox). Taskbook membolehkan pengecualian hanya untuk modul opsional yang "secara eksplisit ditunda". Pengecualian itu belum ditetapkan pemilik proyek. Jika k6 dan Strix ditetapkan sebagai ditunda, T-230 dapat dipertimbangkan VERIFIED.
+- Keputusan rilis tetap "belum siap rilis penuh" sampai pemilik memutuskan pin Node (R-NODE-1) dan cakupan rilis (k6, Strix, AI live).
 
 ---
 
@@ -1200,14 +1256,17 @@ Risiko tambahan (T-040 s.d. T-080):
 ---
 
 - R-AI-1 — Dua panggilan bersamaan pada batas kuota diatasi dengan reservasi sinkron di memori; reservasi yang belum selesai saat proses mati tidak tercatat di database. Mitigasi: batas harian bersifat konservatif per proses lokal. Status: terbuka (dibatasi aplikasi lokal tunggal).
-- R-AI-2 — Path `models/{model}:generateContent` dan header `x-goog-api-key` (Gemini), serta header Authorization Bearer (Groq) belum dikonfirmasi penuh dari halaman referensi dalam sesi ini. Mitigasi: tes live manual opt-in (`AI_LIVE_TESTS=1`) wajib dijalankan sebelum dipakai. Status: terbuka, BELUM DIJALANKAN.
+- R-AI-2 — Gemini: path `models/{model}:generateContent` dan header `x-goog-api-key` TERKONFIRMASI dari dokumen resmi (2026-10-09). Groq: endpoint dan `max_completion_tokens` terkonfirmasi (2026-10-09). Header Bearer Groq belum terbaca dari halaman yang diambil. Mitigasi: tes live manual opt-in (`AI_LIVE_TESTS=1`) wajib dijalankan sebelum dipakai. Status: terbuka, tes live BELUM DIJALANKAN.
 - R-AI-3 — Kelayakan free tier per model belum diverifikasi; semua entri registry bawaan `freeTierAllowlisted: false`, sehingga FREE_TIER_LOCK=true memblokir semua model sampai registry diubah secara sadar. Status: terbuka (by design).
 - R-WEB-1 — Dashboard hanya bind ke loopback dan tidak punya autentikasi. Preview publik sandbox tidak dapat mengakses server tanpa membuka bind non-loopback (ditolak). Mitigasi: `ALLOWED_HOSTS` hanya menambah nama Host; bind tetap loopback. Status: terbuka.
 - R-WEB-2 — Idempotency-Key disimpan di memori proses; restart menghapusnya. Status: terbuka (sesuai keputusan T-050).
 
-- R-NODE-1 — `.nvmrc` dan `engines` memakai Node 24. Menurut nodejs.org (diperiksa 2026-10-09), Node 24 LTS mencapai akhir dukungan pada 2026-09-07 dan Node 26 adalah rilis Current. Memperbarui pin mengubah seluruh toolchain (Playwright, tes, native `node:sqlite`) sehingga perlu verifikasi ulang penuh. Status: terbuka, perlu keputusan pemilik proyek (ADR-0002 perlu direvisi).
+- R-NODE-1 — `.nvmrc` dan `engines` memakai Node 24. Diverifikasi ulang pada 2026-10-09: clean clone dengan Node v24.21.0 lulus `npm ci`, `npm run check`, `npm run build`, dan smoke dashboard. Menurut nodejs.org (diperiksa 2026-10-09), Node 24 LTS mencapai akhir dukungan pada 2026-09-07 dan Node 26 adalah rilis Current. Memperbarui pin mengubah seluruh toolchain (Playwright, tes, native `node:sqlite`) sehingga perlu verifikasi ulang penuh. Status: terbuka, perlu keputusan pemilik proyek (ADR-0002 perlu direvisi).
 
 - R-TEST-1 — (DITUTUP) Kegagalan intermiten `buildReport` ("Data yang dikirim tidak valid"). Akar masalah: pola redaksi `LONG_DIGITS` (16 digit berurutan) menyensor bagian ID hex acak; ~0,19% ID terpengaruh (diukur 500.000 sampel), sehingga laporan gagal secara acak. Ini bug produk, bukan hanya tes. Diperbaiki di `packages/core/src/redact.ts` (batas huruf/digit) dengan tes regresi 40.000 ID acak di `packages/core/tests/redact.test.ts`. Status: ditutup, bukti: CI job quality/browser.
+
+- R-RET-1 — Retensi hanya library (belum ada UI/CLI). Berkas `.tmp-*` yatim akibat crash keras belum dibersihkan. Status: terbuka.
+- R-PATCH-1 — Tes setelah patch dan approval hanya di level library. Belum ada UI dan belum ada alur persetujuan yang tersimpan. Status: terbuka.
 
 - R-TEST-2 — Tes UI keyboard (`navigasi keyboard: Tab pertama ...`) gagal satu kali saat paket web dijalankan paralel; tidak terulang dalam 6 run berikutnya. Penyebab belum diketahui. Status: terbuka (flaky, dipantau).
 

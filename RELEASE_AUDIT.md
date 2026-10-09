@@ -2,44 +2,48 @@
 
 - Tanggal audit: 2026-10-09 (Asia/Jakarta)
 - Branch: `arena/48bd00ed-nusawebbench`
-- Commit yang diaudit: `08a828d` (diverifikasi dari clone bersih `/tmp/nwb-clean` dan dari CI GitHub)
-- Node: v24.21.0 (`.nvmrc`); npm: 10.9.8 (dari toolchain sandbox)
-- Chromium untuk tes lokal: Chromium 153 (`@sparticuz/chromium`, di luar repo). Tes CI memakai Chromium dari Playwright.
-- Bukti CI: run `37884182132` — job `Quality gates` SUCCESS, job `Tes browser` SUCCESS.
+- Commit yang diaudit: `91df536` (clean clone dan uji gerbang). Perubahan dokumentasi setelahnya dicatat di bagian Lampiran.
+- Node untuk clean clone: v24.21.0 (`.nvmrc`). Sumber: paket npm `node-linux-x64@24.21.0`, tarball resmi Node. Sandbox sesi ini awalnya memakai Node v22.22.3 untuk pemasangan awal; hasil di sini diambil dari Node 24.
+- Chromium untuk tes lokal: Chromium 153 (`@sparticuz/chromium` di luar repo, `/tmp/chromium`). Tes CI memakai Chromium dari Playwright.
+- Bukti CI sebelumnya: run `37884382808` pada `ff315dd` (job quality dan browser keduanya success). Run untuk `91df536` belum ada pada saat audit ini ditulis.
 
 ## Keputusan rilis
 
-**BELUM siap rilis penuh.** Gerbang wajib lulus (format, lint, typecheck, tes, secret scan, build, clean install, smoke dashboard, CI). Namun beberapa task belum VERIFIED (lihat bagian Blocked/Deferred) dan risiko terbuka (R-NODE-1) memerlukan keputusan pemilik proyek.
+**BELUM siap rilis penuh.** Gerbang wajib lulus pada clean clone. Namun tiga hal memerlukan keputusan pemilik proyek sebelum rilis:
+
+1. **Cakupan k6 dan Strix**: keduanya BLOCKED untuk eksekusi nyata di sandbox (binary k6 resmi dan Docker tidak tersedia). Jika pemilik menetapkannya sebagai modul opsional yang ditunda, T-150, T-160, dan T-230 dapat dinilai ulang.
+2. **Pin Node (R-NODE-1)**: Node 24 sudah EOL menurut nodejs.org (2026-09-07). Pin belum diganti karena memerlukan revisi ADR-0002 dan verifikasi ulang toolchain.
+3. **AI live**: tes live Gemini dan Groq belum dijalankan (kunci dan opt-in pengguna belum tersedia). Endpoint dan header Gemini sudah terkonfirmasi dari dokumen. Header Bearer Groq belum.
 
 ## Checklist gerbang
 
-| #   | Gerbang                                                  | Perintah                                                 | Hasil                                             | Bukti                         |
-| --- | -------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------- | ----------------------------- |
-| 1   | Clean install dari clone baru                            | `git clone` branch → `npm ci`                            | PASS (setelah perbaikan lockfile `f65f68b`)       | `/tmp/clean-ci.log` (sandbox) |
-| 2   | Format                                                   | `npm run format:check`                                   | PASS                                              | CI quality job                |
-| 3   | Lint (seluruh repo, `--max-warnings=0`)                  | `npm run lint`                                           | PASS                                              | CI quality job                |
-| 4   | Typecheck                                                | `npm run typecheck`                                      | PASS                                              | CI quality job                |
-| 5   | Unit + integrasi + e2e fixture (tanpa browser)           | `npx vitest run` (tanpa `CHROMIUM_PATH`)                 | PASS: 477 lulus, 35 dilewati (tes browser/live)   | sandbox, CI quality job       |
-| 6   | Unit + integrasi + e2e fixture (dengan browser wajib)    | `REQUIRE_BROWSER_TESTS=1 CHROMIUM_PATH=… npx vitest run` | PASS: 510 lulus, 2 dilewati (k6 nyata, live AI)   | sandbox, CI browser job       |
-| 7   | Secret scan (file yang di-track)                         | `npm run secret-scan`                                    | PASS: findings=0 (scanned=143)                    | sandbox, CI                   |
-| 8   | Build semua paket                                        | `npm run build`                                          | PASS                                              | clean clone, CI smoke         |
-| 9   | Smoke dashboard dari `dist` (loopback)                   | `npm run web` → `/api/health`, `/api/diagnostics`        | PASS                                              | clean clone; CI smoke step    |
-| 10  | Audit dependensi produksi                                | `npm audit --omit=dev`                                   | PASS: 0 kerentanan (2026-10-09)                   | sandbox                       |
-| 11  | Lisensi dependensi produksi                              | inspeksi `package.json` (120 paket)                      | Dicatat: MPL-2.0 1 (`axe-core`, tanpa modifikasi) | SECURITY.md                   |
-| 12  | Scope guard dipakai semua adapter jaringan               | `grep checkUrlInScope/createRouteGuard`                  | PASS                                              | T-190                         |
-| 13  | Tidak ada innerHTML/SQL interpolasi/shell di kode server | grep + tes                                               | PASS                                              | T-190                         |
-| 14  | Core tanpa API key / Docker / jaringan                   | default `.env.example`                                   | PASS (tes e2e fixture berjalan dengan AI off)     | `api.test.ts` e2e             |
+| #   | Gerbang                                           | Perintah                                                             | Hasil                                                             | Bukti                                |
+| --- | ------------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------ |
+| 1   | Clean install dari clone baru (Node 24.21.0)      | `git clone` → `npm ci`                                               | PASS (exit 0)                                                     | sandbox, 2026-10-09                  |
+| 2   | Format                                            | `npm run format:check`                                               | PASS                                                              | `npm run check` pada clean clone     |
+| 3   | Lint (`--max-warnings=0`)                         | `npm run lint`                                                       | PASS                                                              | `npm run check` pada clean clone     |
+| 4   | Typecheck                                         | `npm run typecheck`                                                  | PASS                                                              | `npm run check` pada clean clone     |
+| 5   | Unit, integrasi, dan e2e fixture (tanpa browser)  | `npx vitest run` tanpa `CHROMIUM_PATH`                               | PASS: 496 lulus, 35 dilewati                                      | sandbox (sebelum commit dokumentasi) |
+| 6   | Unit, integrasi, dan e2e fixture (dengan browser) | `CHROMIUM_PATH=… REQUIRE_BROWSER_TESTS=1 NWB_CHROME_NO_SANDBOX=1`    | PASS: 529 lulus, 2 dilewati (k6 nyata dan live AI, opt-in)        | clean clone Node 24.21.0             |
+| 7   | Secret scan (file yang di-track)                  | `npm run secret-scan`                                                | PASS: findings=0 (scanned=146)                                    | clean clone                          |
+| 8   | Build semua paket                                 | `npm run build`                                                      | PASS (exit 0)                                                     | clean clone                          |
+| 9   | Smoke dashboard (loopback)                        | `node packages/web/dist/main.js` → `/api/health`, `/api/diagnostics` | PASS: `{"ok":true}`; diagnostik tanpa telemetri; Host asing → 403 | clean clone                          |
+| 10  | Audit dependensi produksi                         | `npm audit --omit=dev`                                               | PASS: 0 kerentanan                                                | sandbox                              |
+| 11  | Lisensi dependensi produksi                       | inspeksi `package.json` (120 paket)                                  | Dicatat: MPL-2.0 1 (`axe-core`, tanpa modifikasi)                 | SECURITY.md                          |
+| 12  | Scope guard dipakai semua adapter jaringan        | `grep checkUrlInScope/createRouteGuard`                              | PASS                                                              | T-190                                |
+| 13  | Tidak ada innerHTML/SQL interpolasi/shell di kode | grep + tes                                                           | PASS                                                              | T-190                                |
+| 14  | Core tanpa API key / Docker / jaringan            | default `.env.example`                                               | PASS (tes e2e fixture berjalan dengan AI off)                     | `api.test.ts` e2e                    |
 
 ## Skenario yang diwajibkan (taskbook §12 T-230 item 5)
 
-| Skenario                    | Status               | Bukti / catatan                                                         |
-| --------------------------- | -------------------- | ----------------------------------------------------------------------- |
-| Provider-off path           | PASS                 | `AiService` `provider-disabled`, tes service dan API                    |
-| Provider error / 429 (mock) | PASS                 | `ai/tests/providers.test.ts`, `service.test.ts` (tanpa retry loop)      |
-| Missing optional tools      | PASS                 | UX/QA/LH/k6/Strix → UNAVAILABLE (TOOL_MISSING / docker-unavailable)     |
-| Cancellation                | PASS                 | `api.test.ts` (QUEUED → CANCELLED), k6 (proses dibunuh), UX (CANCELLED) |
-| Report export               | PASS                 | `api.test.ts` e2e: laporan JSON/HTML/MD dibuat, unduhan `attachment`    |
-| Retention behavior          | **FAIL / belum ada** | Retention/cleanup dengan preview belum diimplementasikan (T-200)        |
+| Skenario                    | Status         | Bukti / catatan                                                                                                                                                                                    |
+| --------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider-off path           | PASS           | `AiService` `provider-disabled`, tes service dan API                                                                                                                                               |
+| Provider error / 429 (mock) | PASS           | `ai/tests/providers.test.ts`, `service.test.ts` (tanpa retry loop)                                                                                                                                 |
+| Missing optional tools      | PASS           | UX/QA/LH/k6/Strix → UNAVAILABLE (TOOL_MISSING / docker-unavailable)                                                                                                                                |
+| Cancellation                | PASS           | `api.test.ts` (QUEUED → CANCELLED), k6 (proses dibunuh), UX (CANCELLED), post-patch (TIMEOUT dibunuh)                                                                                              |
+| Report export               | PASS           | `api.test.ts` e2e: laporan JSON/HTML/MD dibuat dan diunduh sebagai `attachment`. Run CANCELLED juga menghasilkan laporan valid (`report.test.ts`)                                                  |
+| Retention behavior          | PASS (library) | `packages/storage/tests/retention.test.ts` (9 tes): preview tanpa penghapusan, run aktif dilindungi, plan diverifikasi, symlink keluar root ditolak, metadata dipertahankan. Belum ada UI atau CLI |
 
 ## E2E fixture audit (tanpa API key)
 
@@ -49,47 +53,58 @@
 
 ## Modul opsional dan yang ditunda (ditampilkan eksplisit)
 
-| Modul / jalur                      | Status   | Alasan                                                                                                                                        |
-| ---------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Gemini (live)                      | DEFERRED | Tes live manual opt-in (`AI_LIVE_TESTS=1`), tidak dijalankan: tidak ada kunci dan user belum opt-in; endpoint belum terkonfirmasi (R-AI-2).   |
-| Groq (live)                        | DEFERRED | Sama seperti Gemini.                                                                                                                          |
-| k6 (nyata, fixture)                | BLOCKED  | Binary k6 tidak dapat diunduh dari sandbox (host release asset di luar allowlist). Adapter diuji dengan executable palsu (`load-k6`, 20 tes). |
-| Strix (nyata)                      | BLOCKED  | Docker tidak tersedia di sandbox; runner belum diverifikasi terhadap CLI aktual (`security-strix`, gerbang saja).                             |
-| Dashboard: LOAD_K6, SECURITY_STRIX | DEFERRED | Belum disambungkan ke dashboard (422 `MODULE_NOT_AVAILABLE`).                                                                                 |
-| Before/after di UI                 | DEFERRED | Library `packages/compare` tersedia; belum ada UI. Test-after-patch belum diimplementasikan.                                                  |
+| Modul / jalur                      | Status   | Alasan                                                                                                                                                                                          |
+| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gemini (live)                      | DEFERRED | Tes live manual opt-in (`AI_LIVE_TESTS=1`), tidak dijalankan: tidak ada kunci dan belum ada opt-in pengguna. Endpoint dan header terkonfirmasi dari dokumen (2026-10-09).                       |
+| Groq (live)                        | DEFERRED | Sama seperti Gemini. Endpoint terkonfirmasi. Header Bearer belum terbaca dari halaman yang diambil.                                                                                             |
+| k6 (nyata, fixture)                | BLOCKED  | Binary k6 resmi tidak dapat diunduh dari sandbox (`objects.githubusercontent.com` di luar allowlist). Paket npm `k6` adalah dummy autocomplete. Adapter diuji dengan executable palsu (20 tes). |
+| Strix (nyata)                      | BLOCKED  | Docker tidak tersedia di sandbox. Runner belum diverifikasi terhadap CLI aktual (`security-strix`, gerbang saja).                                                                               |
+| Dashboard: LOAD_K6, SECURITY_STRIX | DEFERRED | Belum disambungkan ke dashboard (422 `MODULE_NOT_AVAILABLE`).                                                                                                                                   |
+| Before/after di UI                 | DEFERRED | Library `packages/compare` tersedia dan sudah diuji (tes setelah patch, baseline, record). Belum ada UI.                                                                                        |
+| Retensi di UI/CLI                  | DEFERRED | Library `packages/storage/src/retention.ts` tersedia. Belum ada tombol atau perintah.                                                                                                           |
 
 ## Gap yang terbuka (wajib dipertimbangkan sebelum rilis)
 
-1. **Retention/cleanup artefak dengan preview** (T-200) — belum ada.
-2. **Node 24 EOL** — menurut nodejs.org (diperiksa 2026-10-09), Node 24 LTS EOL pada 2026-09-07 (R-NODE-1). Perlu keputusan pin baru dan verifikasi ulang toolchain.
-3. **Tes k6 dan Strix nyata** — belum ada bukti pada fixture lokal (BLOCKED).
-4. **Verifikasi endpoint Gemini/Groq** dari halaman referensi lengkap dan tes live opt-in (R-AI-2).
-5. **Kelayakan free tier per model** belum diverifikasi (R-AI-3). Akibatnya AI tidak aktif sampai registry diubah secara sadar.
-6. **Dashboard tanpa autentikasi, loopback only** (R-WEB-1). Preview publik sandbox tidak dapat langsung dipakai.
-7. **Idempotensi dan penghitung per run di memori** (R-WEB-2, R-AI-1).
-8. **Pemeriksaan tautan dokumentasi** belum dijalankan (T-210).
+1. **k6 dan Strix nyata** (T-150, T-160): belum ada bukti pada fixture lokal (BLOCKED). Perlu keputusan cakupan (lihat Keputusan rilis).
+2. **Node 24 EOL** (R-NODE-1): perlu keputusan pin, lalu verifikasi ulang toolchain.
+3. **Tes live Gemini dan Groq** belum dijalankan (R-AI-2). Endpoint Gemini dan Groq sudah terkonfirmasi. Header Bearer Groq belum.
+4. **Kelayakan free tier per model** belum diverifikasi (R-AI-3). AI tetap tidak aktif sampai registry diubah secara sadar.
+5. **Dashboard tanpa autentikasi, loopback only** (R-WEB-1).
+6. **Idempotensi dan penghitung per run di memori** (R-WEB-2, R-AI-1).
+7. **Pemeriksaan tautan dokumentasi belum lengkap**: Lighthouse configuration docs mengembalikan 504 pada percobaan ini.
+8. **Retensi dan approval patch belum ada di UI.** Berkas `.tmp-*` yatim akibat crash keras belum dibersihkan (R-RET-1, R-PATCH-1).
 
 ## Risiko terbuka (register)
 
-- R-LH-1 (Medium): Lighthouse tanpa route guard. Sandbox Chrome default aktif; `--no-sandbox` opt-in (`NWB_CHROME_NO_SANDBOX=1`), dipakai CI browser job.
-- R-NODE-1 (Perlu keputusan): Node 24 EOL.
-- R-AI-1/2/3, R-WEB-1/2: lihat `IMPLEMENTATION_STATUS.md`.
+- R-LH-1 (Medium): Lighthouse tanpa route guard. Sandbox Chrome default aktif. `--no-sandbox` opt-in (`NWB_CHROME_NO_SANDBOX=1`), dipakai CI browser job.
+- R-NODE-1 (Perlu keputusan): Node 24 EOL. Clean clone pada Node 24.21.0 lulus gerbang.
+- R-AI-1, R-AI-2 (sebagian terkonfirmasi), R-AI-3, R-WEB-1, R-WEB-2: lihat `IMPLEMENTATION_STATUS.md`.
+- R-RET-1 (baru): retensi hanya library; `.tmp-*` yatim belum dibersihkan.
+- R-PATCH-1 (baru): tes setelah patch dan approval hanya library; belum ada UI atau alur persetujuan tersimpan.
 - R-TEST-2 (dipantau): satu kegagalan flaky tes UI keyboard, tidak terulang dalam 6 run.
 
 ## Bug yang ditemukan dan diperbaiki selama audit (dicatat)
 
-- Redaksi menyensor bagian ID hex acak (`LONG_DIGITS`), menyebabkan laporan gagal ~0,2% per ID. Diperbaiki di `core/redact.ts` + regresi (`08a828d`). Ini bug produk.
+- Redaksi menyensor bagian ID hex acak (`LONG_DIGITS`), menyebabkan laporan gagal ~0,2% per ID. Diperbaiki di `core/redact.ts` dengan regresi (`08a828d`). Bug produk.
 - Lockfile tidak sinkron setelah menambah workspace; `npm ci` gagal dari clone bersih. Diperbaiki (`f65f68b`).
-- Tes pembatalan dengan race; diperbaiki dengan adapter gerbang deterministik.
-- Konsol browser CI mencatat 404 favicon; diperbaiki (204 dan ikon `data:,`).
-- `UX_RULES` tidak diblokir untuk target remote; diperbaiki (sesuai keputusan T-040).
-- Path `//` pada k6 (protocol-relative) lolos validasi; diperbaiki.
-- False positive secret-scan pada referensi properti; diperbaiki (literal rahasia tetap terdeteksi).
+- Tes pembatalan dengan race. Diganti adapter gerbang deterministik (`5224f3d`).
+- Konsol browser CI mencatat 404 favicon. Diperbaiki (204 dan ikon `data:,`).
+- `UX_RULES` tidak diblokir untuk target remote. Diperbaiki (sesuai keputusan T-040).
+- Path `//` pada k6 (protocol-relative) lolos validasi. Diperbaiki.
+- False positive secret-scan pada referensi properti. Diperbaiki (literal rahasia tetap terdeteksi).
+- Penulisan patch sebagian gagal tidak dipetakan ke error terstruktur. Sekarang TOOL_FAILED dengan rollback (`91df536`).
+- Kebocoran direktori sementara pada `storage.test.ts`. Sekarang dibersihkan (`afterEach`).
+
+## Lampiran: perubahan sesi lanjutan (2026-10-09)
+
+- `91df536`: tes setelah patch (`runPostPatchChecks`), baseline (`runChecksAtBase`), record proposal (`buildProposalRecord`), retensi (`previewRetention`/`applyRetention`), `listCreatedBefore`, dan tes negatif baru.
+- Setelah `91df536` (belum dicommit saat audit ditulis, lihat riwayat git): refactor `runChecksIn`, pembersihan temp di `storage.test.ts`, dan pembaruan dokumentasi (README, IMPLEMENTATION_STATUS, RELEASE_AUDIT).
 
 ## Langkah berikutnya yang disarankan
 
-1. Keputusan pemilik proyek: pin Node yang didukung (revisi ADR-0002), lalu verifikasi ulang.
-2. Implementasi retention/cleanup dengan preview (T-200).
-3. Verifikasi endpoint Gemini/Groq dari dokumen lengkap; jalankan tes live opt-in dengan kuota yang disetujui.
-4. Sediakan binary k6 yang terverifikasi (sumber resmi) dan jalankan tes fixture; investigasi kontrak CLI Strix pada lingkungan dengan Docker.
-5. Tinjau keputusan autentikasi/bind dashboard bila ingin preview publik.
+1. Keputusan pemilik: cakupan k6 dan Strix (ditunda eksplisit atau menunggu bukti nyata), dan pin Node (revisi ADR-0002).
+2. Jika k6 dan Strix tetap dalam cakupan: jalankan `K6_BIN=<binary k6 resmi> npx vitest run packages/load-k6` dan siapkan Docker untuk Strix di mesin yang memiliki keduanya.
+3. Jalankan tes live Gemini dan Groq dengan kunci dan kuota yang disetujui. Konfirmasi header Bearer Groq dari dokumen yang terbaca penuh.
+4. Putuskan apakah retensi perlu UI/CLI sebelum rilis, dan apakah approval patch perlu alur tersimpan.
+5. Cek ulang tautan Lighthouse configuration docs.
+6. Verifikasi CI pada commit terbaru (`gh run list --branch arena/48bd00ed-nusawebbench`).

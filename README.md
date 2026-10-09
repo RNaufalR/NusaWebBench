@@ -7,7 +7,7 @@ dan provider AI opsional. Core berjalan tanpa API key, tanpa Docker, dan tanpa j
 
 ## Prasyarat
 
-- Node.js 24 (versi yang di-pin di `.nvmrc`, lihat ADR-0002). **Perhatian:** menurut https://nodejs.org/en/about/previous-releases (diperiksa 2026-10-09), Node 24 LTS sudah mencapai akhir masa dukungan pada 2026-09-07. Pin ini belum diperbarui; lihat R-NODE-1 di IMPLEMENTATION_STATUS.md.
+- Node.js 24 (versi yang di-pin di `.nvmrc`, lihat ADR-0002). Diuji dari clean clone dengan Node v24.21.0 (2026-10-09). **Perhatian:** menurut https://nodejs.org/en/about/previous-releases (diperiksa 2026-10-09), Node 24 LTS sudah mencapai akhir masa dukungan pada 2026-09-07. Pin ini belum diperbarui; lihat R-NODE-1 di IMPLEMENTATION_STATUS.md.
 - Chromium untuk modul browser. Dapat dipasang lewat Playwright:
   `npx playwright-core install --with-deps chromium`, lalu atur `CHROMIUM_PATH` ke path executable.
 - Opsional: `k6` (`K6_BIN`), Docker + Strix (tidak dapat diverifikasi di sandbox; lihat batasan).
@@ -60,7 +60,22 @@ Catatan:
   Reset penghitung lokal tidak mereset kuota provider.
 - Tes live manual: `AI_LIVE_TESTS=1 npx vitest run packages/ai/tests/live.optin.test.ts`. Tes ini tidak
   berjalan di CI dan memakai kuota akun Anda.
-- Endpoint dan header provider belum dikonfirmasi penuh dari dokumen dalam sesi ini (R-AI-2).
+- Endpoint dan header yang dipakai kode, diperiksa terhadap dokumen resmi pada 2026-10-09:
+  - Gemini: `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`, header
+    `x-goog-api-key` (https://ai.google.dev/api/generate-content dan
+    https://ai.google.dev/gemini-api/docs/api-key, halaman terakhir diperbarui 2026-10-06 UTC).
+  - Groq: `POST https://api.groq.com/openai/v1/chat/completions`, `max_completion_tokens`, `n` hanya 1
+    (https://console.groq.com/docs/api-reference). Header Bearer belum terbaca dari halaman yang diambil (R-AI-2).
+- Kunci Gemini: dokumen resmi menyatakan kunci standar tanpa pembatasan ditolak, dan kunci baru dibuat sebagai
+  auth key. Gunakan kunci yang dibatasi ke Gemini API (lihat halaman API key di atas).
+- Tes live belum pernah dijalankan karena belum ada kunci dan opt-in. Kelayakan free tier per model belum
+  diverifikasi (R-AI-3).
+
+## Retensi artefak (library)
+
+`packages/storage/src/retention.ts`: `previewRetention` lalu `applyRetention` (wajib memakai `planId` dari
+preview). Hanya byte berkas di artifact root yang dihapus, dan run yang belum terminal dilewati. Metadata
+evidence tetap ada sebagai jejak audit. Belum ada tombol di dashboard atau perintah CLI.
 
 ## Fixture lokal dan ground truth
 
@@ -93,8 +108,10 @@ Catatan:
 
 Modul `packages/compare` menyediakan perbandingan run (FIXED_VERIFIED hanya dengan bukti sah, REGRESSION
 hanya bila perbandingan sebanding), panduan remediasi berbasis URL, dan proposal patch lewat `git worktree`
-sementara. Proposal tidak pernah menulis ke repository pengguna dan tidak melakukan merge atau deploy.
-Fitur ini belum tersedia di UI dashboard.
+sementara. `runPostPatchChecks` menjalankan tes yang Anda tentukan di worktree itu. Verdict `PASSED` hanya bila
+semua cek lulus. `runChecksAtBase` memberi baseline "sebelum", dan `buildProposalRecord` mencatat approval
+`PENDING`. Proposal tidak pernah menulis ke repository pengguna dan tidak melakukan merge, apply, atau deploy.
+Fitur ini tersedia sebagai library dan belum tersedia di UI dashboard.
 
 ## Batasan umum
 

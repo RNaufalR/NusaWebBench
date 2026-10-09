@@ -184,6 +184,13 @@ export async function runPostPatchChecks(
   proposal: PatchProposal,
   checks: readonly PostPatchCheck[],
 ): Promise<PostPatchReport> {
+  return runChecksIn(proposal.worktreePath, checks);
+}
+
+async function runChecksIn(
+  worktreePath: string,
+  checks: readonly PostPatchCheck[],
+): Promise<PostPatchReport> {
   if (checks.length === 0 || checks.length > MAX_CHECKS) {
     throw new AppError('VALIDATION_FAILED', {
       safeMessage: `Jumlah cek harus 1 sampai ${MAX_CHECKS}.`,
@@ -197,7 +204,7 @@ export async function runPostPatchChecks(
   }
   const results: PostPatchCheckResult[] = [];
   for (const c of checks) {
-    results.push(await runOneCheck(proposal.worktreePath, c));
+    results.push(await runOneCheck(worktreePath, c));
   }
   const verdict =
     results.length > 0 && results.every((r) => r.status === 'PASSED') ? 'PASSED' : 'NOT_VERIFIED';
@@ -261,7 +268,7 @@ export async function runChecksAtBase(
     } catch {
       throw new AppError('TOOL_FAILED', { safeMessage: 'Gagal membuat worktree baseline.' });
     }
-    return await runPostPatchChecks({ worktreePath } as PatchProposal, checks);
+    return await runChecksIn(worktreePath, checks);
   } finally {
     await git(repoPath, ['worktree', 'remove', '--force', worktreePath]).catch(() => undefined);
     await git(repoPath, ['worktree', 'prune']).catch(() => undefined);
