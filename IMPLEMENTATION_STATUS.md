@@ -1057,7 +1057,9 @@ Verifikasi ulang (2026-10-09, sesi verifikasi ketiga):
 - Strix: paket PyPI `strix-agent` 1.7.0 ditemukan dan mensyaratkan Python ≥3.12. Sandbox hanya memiliki Python 3.11.2 (`/usr/bin/python3.11`). Tidak ada uv atau pyenv, dan sumber CPython 3.12 yang diizinkan tidak tersedia.
 - Provider: tidak ada kunci OpenRouter, Gemini, atau Groq untuk smoke test. Kompatibilitas provider tidak bisa dibuktikan tanpa panggilan nyata (taskbook T-160 instruksi 4).
 - Runner dan parser tidak diimplementasikan. Mengimplementasikannya tanpa CLI nyata berarti mengarang kontrak output, dan itu dilarang oleh taskbook.
-- Status tetap EXECUTED (BLOCKED). Untuk VERIFIED dibutuhkan: Docker daemon, Python ≥3.12, versi Strix yang dipin, kunci provider dengan budget, runner dan parser berdasarkan output CLI aktual, dan tes SL-01 opt-in pada `security-lab`.
+- Jaringan ke provider diperiksa (2026-10-09): `openrouter.ai`, `generativelanguage.googleapis.com`, dan `api.groq.com` tidak dapat dijangkau dari sandbox (HTTP 000). Smoke test Strix dan bukti kompatibilitas provider tidak bisa dihasilkan di sandbox ini, terlepas dari ada atau tidaknya kunci.
+- Versi Strix terbaru: v1.7.0 (GitHub release, 2026-10-05). PyPI `strix-agent` 1.7.0 mensyaratkan `requires_python >=3.12`. Dependensi utama termasuk `docker>=7.1.0` dan `litellm>=1.101.0`.
+- Status tetap EXECUTED (BLOCKED). Untuk VERIFIED dibutuhkan di mesin pemilik: Docker daemon, Python ≥3.12, Strix versi dipin, kunci provider dengan budget dan akses jaringan ke provider, runner dan parser berdasarkan output CLI aktual, dan tes SL-01 opt-in pada `security-lab`.
 
 ---
 
