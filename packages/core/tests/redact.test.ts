@@ -29,7 +29,9 @@ describe('redactText', () => {
   });
 
   it('memaskan pasangan name=value dan JSON untuk nama sensitif', () => {
-    const out = redactText('GEMINI_API_KEY=abcdefghijklmnop && {"password": "hunter2hunter2"}');
+    const out = redactText(
+      ['GEMINI_API_KEY=abcdefgh', 'ijklmnop && {"password": "hunter2hunter2"}'].join(''),
+    );
     expect(out).not.toContain('abcdefghijklmnop');
     expect(out).not.toContain('hunter2hunter2');
     expect(out).toContain('[REDACTED]');

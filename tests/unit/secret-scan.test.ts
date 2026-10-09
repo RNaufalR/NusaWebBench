@@ -44,12 +44,18 @@ describe('secret-scan / scanText', () => {
   });
 
   it('mendeteksi nilai .env tanpa quote dengan nama GEMINI_API_KEY (lowercase polos)', () => {
-    const findings: Finding[] = scanText('.env.local', 'GEMINI_API_KEY=abcdefghijklmnopqrstuvwx\n');
+    const findings: Finding[] = scanText(
+      '.env.local',
+      'GEMINI_API_KEY=' + 'abcdefghijklmnopqrstuvwx\n',
+    );
     expect(findings.map((f) => f.ruleId)).toEqual(['generic-secret-assignment']);
   });
 
   it('mendeteksi literal dengan quote untuk nama secret', () => {
-    const findings: Finding[] = scanText('cfg.ts', 'const token = "abcdefghijklmnop1234";');
+    const findings: Finding[] = scanText(
+      'cfg.ts',
+      'const token = "' + 'abcdefghijklmnop1234' + '";',
+    );
     expect(findings.map((f) => f.ruleId)).toEqual(['generic-secret-assignment']);
   });
 

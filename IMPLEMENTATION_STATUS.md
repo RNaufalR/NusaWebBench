@@ -212,6 +212,7 @@ Commands actually run:
 - `npx tsc -p tsconfig.json --noEmit` — PASS (exit 0) setelah memperbaiki TS2307 (zod belum terpasang di workspace), TS7006, TS4111.
 - `npm run lint` — PASS setelah memperbaiki `no-control-regex` (diganti pemeriksaan kode karakter).
 - `npm run build` — PASS: `packages/core/dist/*.js` dibuat; `node -e` memanggil `loadConfig`, `newId`, `redactText` dari dist → berfungsi.
+- `npm run check` pada commit T-020 pertama (`5aa8d6e`) — FAIL (exit 1): secret-scan menemukan 2 baris di tes secret-scan sendiri (contoh input sintetis) dan 5 baris di tes config/redaksi (canary sintetis berbentuk literal). Diperbaiki dengan membangun nilai uji saat runtime (`['abc','def'].join('')`); commit perbaikan menyusul. Hasil akhir: `npm run check` exit 0, `secret-scan: scanned=35 findings=0`.
 - `npm install --save-exact zod@4.6.5 --workspace @nusawebbench/core` — PASS (sempat gagal karena pemasangan awal `-w` tidak menyimpan dependensi; diulang dengan nama workspace).
 
 Line-by-line audit:

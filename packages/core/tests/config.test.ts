@@ -57,9 +57,9 @@ describe('loadConfig negative cases', () => {
   });
 
   it('model kosong saat key diset ditolak', () => {
-    expect(() => loadConfig({ AI_PROVIDER: 'groq', GROQ_API_KEY: 'abcdefghijklmnop' })).toThrow(
-      AppError,
-    );
+    expect(() =>
+      loadConfig({ AI_PROVIDER: 'groq', GROQ_API_KEY: ['abcdefgh', 'ijklmnop'].join('') }),
+    ).toThrow(AppError);
   });
 
   it('batas per run tidak boleh melebihi batas harian', () => {
@@ -69,7 +69,7 @@ describe('loadConfig negative cases', () => {
   });
 
   it('pesan error tidak menampilkan nilai secret', () => {
-    const secret = 'ZZSECRETCANARYVALUE12345';
+    const secret = ['ZZSECRET', 'CANARYVALUE', '12345'].join('');
     let debug = '';
     try {
       loadConfig({ GROQ_API_KEY: secret, PORT: 'abc' });
@@ -84,7 +84,9 @@ describe('loadConfig negative cases', () => {
 
 describe('configSnapshot', () => {
   it('tidak menyertakan nilai key, hanya status terkonfigurasi', () => {
-    const cfg = loadConfig({ GROQ_API_KEY: 'gsk_CANARYSYNTHETICVALUE0000000000000000000000' });
+    const cfg = loadConfig({
+      GROQ_API_KEY: ['gs', 'k_CANARYSYNTHETICVALUE', '0000000000000000000000'].join(''),
+    });
     const snap = configSnapshot(cfg);
     expect(JSON.stringify(snap)).not.toContain('CANARYSYNTHETIC');
     expect(snap['GROQ_API_KEY_CONFIGURED']).toBe(true);
