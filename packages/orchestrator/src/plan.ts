@@ -17,6 +17,8 @@ import {
 export const REMOTE_NOT_ENFORCEABLE_MODULES: readonly ModuleName[] = Object.freeze([
   'FUNCTIONAL_QA',
   'LIGHTHOUSE',
+  // UX_RULES memakai Chromium yang sama dengan route guard; DNS pinning belum dapat dijamin.
+  'UX_RULES',
   'LOAD_K6',
   'SECURITY_STRIX',
 ]);

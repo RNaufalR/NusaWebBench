@@ -84,12 +84,12 @@ export function scanText(file, text, rules = RULES) {
         const quote = match[1] ?? '';
         const value = match[2] ?? '';
         if (PLACEHOLDER_VALUE.test(value)) continue;
-        // Nilai tanpa quote yang berbentuk identifier camelCase/snake_case tanpa digit
-        // (mis. `password = someLongName;`) dianggap referensi variabel, bukan literal.
+        // Nilai tanpa quote yang berbentuk identifier (atau jalur properti seperti
+        // `this.config.GROQ_API_KEY`) tanpa digit dianggap referensi, bukan literal.
         // Nilai huruf kecil polos tetap dilaporkan karena bisa berupa secret.
         if (
           quote === '' &&
-          /^[A-Za-z_$][\w$]*$/.test(value) &&
+          /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(value) &&
           /[A-Z_$]/.test(value.slice(1)) &&
           !/\d/.test(value)
         )

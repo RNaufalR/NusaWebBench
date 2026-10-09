@@ -20,6 +20,7 @@ export default defineConfig({
       '@nusawebbench/lighthouse': path.join(root, 'packages/lighthouse/src/index.ts'),
       '@nusawebbench/ux-rules': path.join(root, 'packages/ux-rules/src/index.ts'),
       '@nusawebbench/ai': path.join(root, 'packages/ai/src/index.ts'),
+      '@nusawebbench/web': path.join(root, 'packages/web/src/index.ts'),
     },
   },
   test: {

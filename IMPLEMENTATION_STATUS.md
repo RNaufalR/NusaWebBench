@@ -26,11 +26,11 @@ Legenda status: `PLANNED`, `IN_PROGRESS`, `EXECUTED`, `VERIFIED`, `BLOCKED`, `FA
 | T-110 | Gemini adapter                                    | VERIFIED | T-010, T-020, T-030, T-060                      |
 | T-120 | Groq adapter                                      | VERIFIED | T-010, T-020, T-030, T-060                      |
 | T-130 | AI router, capability registry, free-tier lock    | VERIFIED | T-110, T-120                                    |
-| T-140 | Dashboard MVP dan API routes                      | PLANNED  | T-030, T-040, T-050, T-060, T-080               |
+| T-140 | Dashboard MVP dan API routes                      | VERIFIED | T-030, T-040, T-050, T-060, T-080               |
 | T-150 | k6 adapter dan safety gates                       | PLANNED  | T-040, T-050, T-060, T-070, T-140               |
 | T-160 | Strix adapter                                     | PLANNED  | T-040, T-050, T-060, T-070                      |
 | T-170 | Before/after comparison dan remediation proposals | PLANNED  | T-060, T-080, T-090, T-100, T-140               |
-| T-180 | Provider settings, usage, privacy controls        | PLANNED  | T-110, T-120, T-130, T-140                      |
+| T-180 | Provider settings, usage, privacy controls        | VERIFIED | T-110, T-120, T-130, T-140                      |
 | T-190 | Security hardening dan threat-model verification  | PLANNED  | T-040 s.d. T-180                                |
 | T-200 | Low-resource behavior, reliability, cleanup       | PLANNED  | T-050, T-060, T-080, T-090, T-140, T-150, T-160 |
 | T-210 | Documentation and onboarding                      | PLANNED  | T-010 s.d. T-200                                |
@@ -850,6 +850,106 @@ Known limitation: reservasi memori tidak bertahan saat crash; per-run cap juga i
 
 ---
 
+## T-140 — Dashboard MVP dan API routes
+
+ID: T-140
+Title: Dashboard MVP dan API routes
+Status: VERIFIED
+Depends on: T-030, T-040, T-050, T-060, T-080
+
+Files: `packages/web/src/app.ts` (rute, validasi, mapping error), `packages/web/src/http.ts` (batas body, Host/Origin, header keamanan), `packages/web/src/server.ts` (bind loopback saja), `packages/web/src/pages.ts` (HTML/CSS/JS statis tanpa innerHTML), `packages/web/src/main.ts` (composition root; `npm run web`), `packages/web/tests/api.test.ts` (55 tes API + e2e), `packages/web/tests/ui.test.ts` (2 tes UI Chromium).
+
+Keputusan:
+
+- Server hanya bind ke loopback; alamat lain ditolak sebelum `listen` (`assertLoopbackBind`). Ini berarti preview publik sandbox tidak dapat mengakses dashboard secara langsung (R-WEB-1).
+- Host harus `127.0.0.1` atau `localhost` (anti DNS rebinding). Origin untuk metode yang mengubah state harus sama dengan Host; Sec-Fetch-Site lintas-situs ditolak.
+- Dashboard MVP menyediakan tiga modul: `FUNCTIONAL_QA`, `UX_RULES`, `LIGHTHOUSE`. `LOAD_K6`, `SECURITY_STRIX`, dan modul AI belum disambungkan dan mengembalikan 422 `MODULE_NOT_AVAILABLE`.
+- Pembuatan run melalui `RunOrchestrator.createRun` (satu sumber aturan plan, otorisasi, dan idempotensi). Dashboard tidak menduplikasi logika itu.
+- Target mode `url` (remote) dengan modul berbasis browser diblokir oleh `buildRunPlan`. Perbaikan selama T-140: `UX_RULES` ditambahkan ke `REMOTE_NOT_ENFORCEABLE_MODULES` karena memakai Chromium yang sama dan DNS pinning belum dapat dijamin (sesuai keputusan T-040 tentang modul browser).
+- Tidak ada jalur konfirmasi scope terpisah: `scopeConfirmedAt` tidak pernah diisi di kode, sehingga persetujuan per run (`acknowledged: true`) dan preview plan menjadi gerbang yang berlaku.
+- Idempotency-Key disimpan di memori (sesuai T-050). Restart proses menghapusnya (R-WEB-2).
+- Artefak diunduh hanya lewat ID (`evd_<32 hex>`), tidak pernah lewat path. Respons `attachment`, `nosniff`, dan CSP `sandbox`.
+- Respons run dan temuan tidak memuat path penyimpanan atau nilai rahasia; status AI hanya `keyConfigured`.
+
+Acceptance criteria dan bukti:
+
+- End-to-end local audit berjalan: `e2e ... run UX_RULES + FUNCTIONAL_QA pada fixture: selesai, temuan, laporan, dan unduhan artefak aman` (Chromium nyata, fixture `ux-signals`; run COMPLETED, temuan ≥5 termasuk `ux-horizontal-overflow`).
+- Error state jelas: kode dan pesan aman (`{ error, message }`), tanpa stack trace.
+- External AI off masih lengkap: tes e2e dijalankan dengan `AI_PROVIDER=none` (default).
+- Rute menolak input malformed/oversize: 400/413/415 (tes).
+- Keyboard basic test: `navigasi keyboard: Tab pertama mencapai tautan lewati ...` (Chromium nyata).
+- Halaman memuat tanpa error konsol: `memuat tanpa error konsol; status berubah menjadi siap`.
+- Build dan start dari `dist`: `npm run build --workspaces` lulus; `node packages/web/dist/main.js` menjawab `/api/health` dan halaman (diuji dengan curl di loopback).
+
+Negative tests (taskbook §12 T-140):
+
+- invalid body (400), oversize response/body (413), arbitrary artifact path (400 untuk encoded slash; 404 untuk `..` karena klien menormalkannya), double-submit (Idempotency-Key sama → run sama), canceled run (QUEUED → CANCELLED), secret display (tidak ada nilai kunci di respons), XSS strings in findings (disimpan dan dikembalikan sebagai JSON; UI merender sebagai teks, diuji di Chromium), API call from unexpected origin (403).
+- Tambahan: over-posting (`scopeConfirmedAt`, `freeTierLock` ditolak), Host asing (403), Content-Type salah (415), metode salah (405), bind non-loopback ditolak (CONFIG_INVALID).
+
+Audit khusus:
+
+- Route authorization/local binding: semua rute melewati `checkHostAndOrigin`; tidak ada rute tanpa pemeriksaan Host.
+- Frontend state transitions: polling 2 detik hanya saat run belum terminal; pembatalan dan pembuatan laporan dibatasi oleh status.
+- XSS: `innerHTML` tidak dipakai (diuji sebagai string pada `APP_JS`); semua data masuk lewat `textContent`.
+- API error leakage: kesalahan tak terduga → 500 `INTERNAL` generik.
+- Accessibility: setiap input berlabel, `aria-live` untuk status, tautan lewati, fokus terlihat (`:focus-visible`), status berupa teks.
+
+Known limitations:
+
+- Dashboard tidak menyajikan TLS dan tidak punya autentikasi (model aplikasi lokal). Jangan diekspos ke jaringan.
+- Tidak ada pagination pada daftar target (batas 100).
+- Laporan dibuat sinkron; ukuran dibatasi `saveReport`.
+
+---
+
+## T-180 — Provider settings, usage, privacy controls
+
+ID: T-180
+Title: Provider settings, usage, privacy controls
+Status: VERIFIED
+Depends on: T-110, T-120, T-130, T-140
+
+Files: `packages/ai/src/settings.ts` (`AiSettingsService`, `SettingsUpdateSchema`), rute `/api/settings`, `/api/settings/reset-counters`, `/api/providers/status`, `/api/providers/test` di `packages/web/src/app.ts`, dan `packages/ai/tests/settings.test.ts`.
+
+Keputusan:
+
+- API key tidak pernah disimpan di SQLite dan tidak pernah dikembalikan. Status hanya `keyConfigured`.
+- Pengaturan yang dapat diubah lewat UI/API: consent data eksternal dan tingkat redaksi. `freeTierLock`, provider, dan izin operator hanya dari environment; schema `strict` menolak kunci lain.
+- Reset penghitung lokal menyimpan baseline waktu; riwayat `provider_usage` tetap utuh. Notice menyatakan bahwa ini tidak mereset kuota provider.
+- Model dengan verifikasi lebih dari 90 hari menampilkan peringatan usang.
+- Uji koneksi hanya berjalan atas aksi pengguna (`confirm: true`) dan melewati semua gerbang yang sama.
+
+Acceptance criteria dan bukti:
+
+- Key tidak dikembalikan ke UI: `status tidak pernah memuat nilai kunci` (tes settings) dan `status provider tidak pernah memuat nilai kunci` (tes API).
+- Local usage persisten: `kuota bertahan setelah restart` (tes service).
+- Opt-in dipatuhi di semua rute: semua panggilan AI melalui `AiService.run`, yang memeriksa consent (dan `testConnection` memakai `run`).
+- Free-tier lock terpusat: `FREE_TIER_LOCK=true` diperiksa di routing; UI tidak punya kontrol untuk itu (tes over-posting).
+- Request quota exhausted terhenti: `local-quota-exhausted` (tes).
+
+Negative tests (taskbook §12 T-180):
+
+- restart app: tes restart (kuota tetap habis)
+- concurrent usage requests: tes dua panggilan bersamaan pada batas
+- consent revoked: `consent-missing` setelah dicabut
+- malformed settings: 400 (tes)
+- UI/API config mismatch: over-posting `freeTierLock` ditolak 400
+- missing key: `provider-key-missing`
+- stale model verification: peringatan usang (tes settings dengan tanggal 2027)
+
+Audit khusus:
+
+- Secrets: tidak ada nilai kunci di respons, tabel usage, atau body yang dikirim selain header provider (tes canary).
+- Persistent counters: `provider_usage` dengan `countRequestsSince` (storage, ditambahkan di T-130).
+- Settings authorization: `PUT /api/settings` hanya menerima dua kunci.
+- Reset semantics: diuji bahwa riwayat tetap.
+
+Known limitation: UI untuk "model config" dan "capability info" hanya menampilkan status dari environment dan registry; pengubahan model dilakukan lewat environment (`GEMINI_MODEL`, `GROQ_MODEL`).
+
+---
+
+---
+
 ## Verifikasi otomatis pada branch (CI)
 
 Workflow: `.github/workflows/ci.yml`.
@@ -887,6 +987,12 @@ Risiko tambahan (T-040 s.d. T-080):
 - R-FIX-1 — `security-lab` sengaja tidak meng-escape `q`; hanya untuk uji lokal dengan banner peringatan, tidak boleh di-deploy. Mitigasi: server bind 127.0.0.1.
 
 ---
+
+- R-AI-1 — Dua panggilan bersamaan pada batas kuota diatasi dengan reservasi sinkron di memori; reservasi yang belum selesai saat proses mati tidak tercatat di database. Mitigasi: batas harian bersifat konservatif per proses lokal. Status: terbuka (dibatasi aplikasi lokal tunggal).
+- R-AI-2 — Path `models/{model}:generateContent` dan header `x-goog-api-key` (Gemini), serta header Authorization Bearer (Groq) belum dikonfirmasi penuh dari halaman referensi dalam sesi ini. Mitigasi: tes live manual opt-in (`AI_LIVE_TESTS=1`) wajib dijalankan sebelum dipakai. Status: terbuka, BELUM DIJALANKAN.
+- R-AI-3 — Kelayakan free tier per model belum diverifikasi; semua entri registry bawaan `freeTierAllowlisted: false`, sehingga FREE_TIER_LOCK=true memblokir semua model sampai registry diubah secara sadar. Status: terbuka (by design).
+- R-WEB-1 — Dashboard hanya bind ke loopback dan tidak punya autentikasi. Preview publik sandbox tidak dapat mengakses server tanpa membuka bind non-loopback (ditolak). Mitigasi: `ALLOWED_HOSTS` hanya menambah nama Host; bind tetap loopback. Status: terbuka.
+- R-WEB-2 — Idempotency-Key disimpan di memori proses; restart menghapusnya. Status: terbuka (sesuai keputusan T-050).
 
 ## Log task lainnya
 

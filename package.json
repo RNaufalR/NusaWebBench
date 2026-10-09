@@ -16,7 +16,8 @@
     "test": "vitest run",
     "secret-scan": "node scripts/secret-scan.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run secret-scan",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "web": "npm run build --workspaces --if-present && node packages/web/dist/main.js"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
