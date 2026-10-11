@@ -314,11 +314,33 @@ describe('run: validasi, scope, dan idempotensi', () => {
     expect(unavailable.json).toMatchObject({ error: 'MODULE_NOT_AVAILABLE' });
   });
 
+  it('LOAD_K6 tanpa riskAcknowledged → 400 RISK_ACK_REQUIRED', async () => {
+    const run = await call('POST', '/api/runs', {
+      targetId: fixtureTargetId,
+      modules: ['LOAD_K6'],
+      acknowledged: true,
+    });
+    expect(run.status).toBe(400);
+    expect(run.json).toMatchObject({ error: 'RISK_ACK_REQUIRED' });
+  });
+
+  it('plan menyertakan deskripsi risiko untuk modul berisiko', async () => {
+    const plan = await call('POST', '/api/plan', {
+      targetId: fixtureTargetId,
+      modules: ['LOAD_K6', 'SECURITY_STRIX'],
+    });
+    expect(plan.status).toBe(200);
+    const risks = (plan.json as { risks: { module: string; description: string }[] }).risks;
+    expect(risks.map((r) => r.module).sort()).toEqual(['LOAD_K6', 'SECURITY_STRIX']);
+    for (const r of risks) expect(r.description.length).toBeGreaterThan(10);
+  });
+
   it('LOAD_K6 tersambung di API tetapi SKIPPED jujur saat nonaktif (k6-disabled)', async () => {
     const run = await call('POST', '/api/runs', {
       targetId: fixtureTargetId,
       modules: ['LOAD_K6'],
       acknowledged: true,
+      riskAcknowledged: true,
     });
     // Diterima API (202): modul sudah tersambung, bukan lagi 422 MODULE_NOT_AVAILABLE.
     expect(run.status).toBe(202);
@@ -341,6 +363,7 @@ describe('run: validasi, scope, dan idempotensi', () => {
       targetId: fixtureTargetId,
       modules: ['SECURITY_STRIX'],
       acknowledged: true,
+      riskAcknowledged: true,
     });
     expect(run.status).toBe(202);
     const runId = (run.json as { id: string }).id;

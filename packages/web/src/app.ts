@@ -41,6 +41,18 @@ export const WEB_MODULES: readonly ModuleName[] = Object.freeze([
   'SECURITY_STRIX',
 ]);
 
+/**
+ * Modul berisiko: butuh konfirmasi eksplisit terpisah selain `acknowledged` generik
+ * (taskbook: preview + konfirmasi khusus untuk load/security). Deskripsi risiko
+ * ditampilkan di pratinjau rencana dan wajib diakui sebelum run dibuat.
+ */
+export const RISKY_MODULES: Readonly<Record<string, string>> = Object.freeze({
+  LOAD_K6:
+    'Load test mengirim banyak request berulang ke target; hanya untuk target milik sendiri atau fixture lokal.',
+  SECURITY_STRIX:
+    'Security scan menjalankan analisis agresif di container terisolasi; hanya untuk target lokal (fixture).',
+});
+
 const ID = /^[a-z]+_[a-f0-9]{32}$/;
 const TERMINAL = new Set(['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED']);
 
@@ -54,6 +66,7 @@ const RunRequestSchema = z.strictObject({
   targetId: z.string().min(1).max(80),
   modules: z.array(z.enum(MODULE_NAMES)).min(1).max(5),
   acknowledged: z.literal(true),
+  riskAcknowledged: z.boolean().optional(),
 });
 
 const PlanRequestSchema = z.strictObject({
@@ -264,7 +277,14 @@ export function createApp(deps: WebDeps) {
   add('GET', '/api/modules', false, () => ({
     kind: 'json',
     status: 200,
-    body: { modules: WEB_MODULES.map((m) => ({ name: m, label: MODULE_LABELS[m] ?? m })) },
+    body: {
+      modules: WEB_MODULES.map((m) => ({
+        name: m,
+        label: MODULE_LABELS[m] ?? m,
+        risky: m in RISKY_MODULES,
+        riskDescription: RISKY_MODULES[m] ?? null,
+      })),
+    },
   }));
 
   add('GET', '/api/targets', false, () => ({
@@ -300,12 +320,16 @@ export function createApp(deps: WebDeps) {
       modules: input.modules.filter((m) => WEB_MODULES.includes(m)),
     });
     const unsupported = input.modules.filter((m) => !WEB_MODULES.includes(m));
+    const risks = input.modules
+      .filter((m) => m in RISKY_MODULES)
+      .map((m) => ({ module: m, description: RISKY_MODULES[m] ?? '' }));
     return {
       kind: 'json',
       status: 200,
       body: {
         ...plan,
         unsupportedModules: unsupported,
+        risks,
         note: unsupported.length > 0 ? 'Modul tersebut belum tersedia di dashboard MVP.' : null,
       },
     };
@@ -316,6 +340,14 @@ export function createApp(deps: WebDeps) {
     const unsupported = input.modules.filter((m) => !WEB_MODULES.includes(m));
     if (unsupported.length > 0) {
       throw new HttpError(422, 'MODULE_NOT_AVAILABLE', 'Modul belum tersedia di dashboard MVP.');
+    }
+    const risky = input.modules.filter((m) => m in RISKY_MODULES);
+    if (risky.length > 0 && input.riskAcknowledged !== true) {
+      throw new HttpError(
+        400,
+        'RISK_ACK_REQUIRED',
+        `Modul berisiko (${risky.join(', ')}) membutuhkan konfirmasi risiko eksplisit (riskAcknowledged: true).`,
+      );
     }
     const target = getTarget(input.targetId);
     const key = req.headers['idempotency-key'];

@@ -49,6 +49,14 @@ export const INDEX_HTML = `<!doctype html>
             <legend>Modul</legend>
             <div id="run-modules"></div>
           </fieldset>
+          <div id="risk-box" class="notice" hidden>
+            <p><strong>Modul berisiko dipilih:</strong></p>
+            <ul id="risk-list"></ul>
+            <label class="check">
+              <input type="checkbox" name="riskAcknowledged" />
+              Saya memahami risiko di atas dan mengonfirmasi run ini hanya untuk target yang saya miliki/diizinkan.
+            </label>
+          </div>
           <label class="check">
             <input type="checkbox" name="acknowledged" required />
             Saya memiliki izin untuk menguji target ini dan memahami cakupan run.
@@ -179,18 +187,32 @@ export const APP_JS = `"use strict";
     });
   }
 
+  var moduleRisks = {};
+
   function loadModules() {
     return api("GET", "/api/modules").then(function (data) {
       var box = $("run-modules"); box.textContent = "";
       data.modules.forEach(function (m) {
+        if (m.risky) moduleRisks[m.name] = m.riskDescription || m.label;
         var lab = el("label", null, { "class": "check" });
         var input = el("input", null, { type: "checkbox", name: "modules", value: m.name });
         if (m.name === "UX_RULES" || m.name === "FUNCTIONAL_QA") input.checked = true;
+        input.addEventListener("change", updateRiskBox);
         lab.appendChild(input);
-        lab.appendChild(document.createTextNode(" " + m.label));
+        lab.appendChild(document.createTextNode(" " + m.label + (m.risky ? " ⚠" : "")));
         box.appendChild(lab);
       });
+      updateRiskBox();
     });
+  }
+
+  function updateRiskBox() {
+    var selected = selectedModules().filter(function (m) { return moduleRisks[m]; });
+    var box = $("risk-box");
+    if (selected.length === 0) { box.hidden = true; return; }
+    box.hidden = false;
+    var ul = $("risk-list"); ul.textContent = "";
+    selected.forEach(function (m) { ul.appendChild(el("li", m + ": " + moduleRisks[m])); });
   }
 
   function selectedModules() {
@@ -334,6 +356,12 @@ export const APP_JS = `"use strict";
       box.appendChild(el("p", p.allowed ? "Rencana dapat dijalankan." : (p.blockedReason || "Rencana diblokir.")));
       var ul = el("ul"); p.effects.forEach(function (e) { ul.appendChild(el("li", e)); });
       box.appendChild(ul);
+      if (p.risks && p.risks.length > 0) {
+        var rw = el("p", "Risiko modul: ", { "class": "warn" });
+        var rul = el("ul");
+        p.risks.forEach(function (r) { rul.appendChild(el("li", r.module + ": " + r.description)); });
+        box.appendChild(rw); box.appendChild(rul);
+      }
       if (p.note) box.appendChild(el("p", p.note, { "class": "warn" }));
     }).catch(fail);
   });
@@ -342,7 +370,7 @@ export const APP_JS = `"use strict";
     ev.preventDefault();
     var f = ev.target;
     var key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, "") : String(Date.now()) + String(Math.random()).slice(2);
-    api("POST", "/api/runs", { targetId: $("run-target").value, modules: selectedModules(), acknowledged: f.elements["acknowledged"].checked === true }, { "Idempotency-Key": key })
+    api("POST", "/api/runs", { targetId: $("run-target").value, modules: selectedModules(), acknowledged: f.elements["acknowledged"].checked === true, riskAcknowledged: f.elements["riskAcknowledged"] ? f.elements["riskAcknowledged"].checked === true : undefined }, { "Idempotency-Key": key })
       .then(function (run) { say("Run dibuat: " + run.id + " (" + label(run.status) + ")."); f.elements["acknowledged"].checked = false; openRun(run.id); return loadRuns(); })
       .catch(fail);
   });
