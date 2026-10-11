@@ -100,6 +100,17 @@ export async function startEgressProxy(allowedUrls: readonly string[]): Promise<
       if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' });
       res.end('upstream error');
     });
+    // Jika client membatalkan request (koneksi diputus di tengah jalan), hancurkan upstream
+    // agar tidak menjadi koneksi yatim yang menggantung.
+    req.on('error', () => {
+      upstream.destroy();
+    });
+    // Lacak socket upstream agar close() dapat menghancurkannya; tanpa ini koneksi upstream
+    // yang masih in-flight tertinggal setelah proxy ditutup (orphan socket).
+    upstream.on('socket', (sock) => {
+      sockets.add(sock);
+      sock.on('close', () => sockets.delete(sock));
+    });
     req.pipe(upstream);
   });
 
@@ -130,7 +141,20 @@ export async function startEgressProxy(allowedUrls: readonly string[]): Promise<
 
   server.on('connection', (s) => {
     sockets.add(s);
+    // Sabuk pengaman eksplisit per koneksi: peer (mis. Chrome yang di-kill tepat setelah run)
+    // dapat me-RST koneksi kapan saja. Tanpa listener, perilaku 'error' socket bergantung pada
+    // implementasi internal http.Server; handler ini menjamin satu koneksi yang bermasalah
+    // tidak pernah menjadi uncaughtException yang menjatuhkan proses.
+    s.on('error', () => {
+      sockets.delete(s);
+      if (!s.destroyed) s.destroy();
+    });
     s.on('close', () => sockets.delete(s));
+  });
+
+  // Request yang rusak/terputus di tengah parsing header ditangani eksplisit.
+  server.on('clientError', (_err, socket) => {
+    socket.destroy();
   });
 
   await new Promise<void>((resolve, reject) => {

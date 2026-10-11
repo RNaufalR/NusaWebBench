@@ -1,4 +1,5 @@
 import http from 'node:http';
+import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterAll, describe, expect, it } from 'vitest';
 import { runLighthouseWithEgress } from '../src/lighthouse.js';
@@ -33,20 +34,56 @@ const FORMS: readonly Forms[] = [
   { label: 'IPv6 literal', host: '[::1]' },
 ];
 
-type Server = { server: http.Server; port: number; hits: string[] };
+type Server = {
+  server: http.Server;
+  port: number;
+  hits: string[];
+  close: () => Promise<void>;
+};
+
+/**
+ * Error socket yang tidak terduga selama suite berjalan. ECONNRESET/EPIPE karena peer menutup
+ * koneksi (Chrome yang di-kill setelah run, proxy.close() yang menghancurkan upstream) adalah
+ * lifecycle TCP yang dapat diprediksi untuk server fixture — bukan kegagalan. Error lain
+ * (mis. kegagalan bind, kesalahan internal) dicatat dan menggagalkan suite di afterAll.
+ */
+const unexpectedSocketErrors: Error[] = [];
 
 function listen(host: string, handler: http.RequestListener): Promise<Server> {
   const hits: string[] = [];
+  const sockets = new Set<net.Socket>();
   const server = http.createServer((req, res) => {
     hits.push(req.url ?? '');
     handler(req, res);
   });
+  server.on('connection', (s) => {
+    sockets.add(s);
+    s.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ECONNRESET' && code !== 'EPIPE') unexpectedSocketErrors.push(err);
+      s.destroy();
+    });
+    s.on('close', () => sockets.delete(s));
+  });
+  server.on('clientError', (_err, socket) => socket.destroy());
   const bind = host.startsWith('[') ? '::1' : host;
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, bind, () => {
       server.off('error', reject);
-      resolve({ server, port: (server.address() as AddressInfo).port, hits });
+      resolve({
+        server,
+        port: (server.address() as AddressInfo).port,
+        hits,
+        // Hancurkan koneksi terbuka dulu: server.close() saja tidak menutup koneksi
+        // keep-alive yang masih menggantung, meninggalkan orphan socket.
+        close: () =>
+          new Promise<void>((done) => {
+            for (const s of sockets) s.destroy();
+            server.close(() => done());
+            server.closeAllConnections?.();
+          }),
+      });
     });
   });
 }
@@ -57,13 +94,19 @@ function hostFor(form: Forms, port: number): string {
 
 /** Ambil URL langsung dari Node untuk membuktikan server OTHER hidup. */
 function directGet(url: string): Promise<number> {
+  // Agent khusus tanpa keep-alive: socket tidak di-pool sehingga tidak ada koneksi
+  // menggantung yang hidup melewati masa pakai tes.
+  const agent = new http.Agent({ keepAlive: false });
   return new Promise((resolve, reject) => {
-    http
-      .get(url, (res) => {
-        res.resume();
-        resolve(res.statusCode ?? 0);
-      })
-      .on('error', reject);
+    const req = http.get(url, { agent }, (res) => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode ?? 0));
+    });
+    req.on('error', (err) => {
+      agent.destroy();
+      reject(err);
+    });
+    req.on('close', () => agent.destroy());
   });
 }
 
@@ -79,7 +122,9 @@ describeBrowser('Lighthouse egress runtime (F-06)', () => {
   const servers: Server[] = [];
 
   afterAll(async () => {
-    await Promise.all(servers.map((s) => new Promise((r) => s.server.close(r))));
+    await Promise.all(servers.map((s) => s.close()));
+    // Error socket di luar lifecycle normal (bukan ECONNRESET/EPIPE) menggagalkan suite.
+    expect(unexpectedSocketErrors).toEqual([]);
   });
 
   for (const form of FORMS) {
