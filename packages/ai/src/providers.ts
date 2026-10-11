@@ -99,17 +99,71 @@ function tokenField(usage: unknown, key: string): number | null {
   return typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
 }
 
-/** Membaca body dengan batas ukuran. Melebihi batas dianggap respons tidak valid. */
-async function readBounded(res: Response): Promise<string> {
+/** Membaca body dengan batas ukuran selama streaming. Melebihi batas dianggap respons tidak valid.
+ * Batas diperiksa saat chunk dibaca, bukan setelah seluruh body dimuat ke memori. */
+async function readBounded(res: Response, signal: AbortSignal): Promise<string> {
   const declared = res.headers.get('content-length');
-  if (declared !== null && Number(declared) > MAX_RESPONSE_BYTES) {
-    throw new ProviderCallError('INVALID_RESPONSE', false);
+  if (declared !== null) {
+    const n = Number(declared.trim());
+    if (!Number.isFinite(n) || n < 0) {
+      throw new ProviderCallError('INVALID_RESPONSE', false);
+    }
+    if (n > MAX_RESPONSE_BYTES) {
+      throw new ProviderCallError('INVALID_RESPONSE', false);
+    }
   }
-  const text = await res.text();
-  if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) {
-    throw new ProviderCallError('INVALID_RESPONSE', false);
+  const body = res.body;
+  if (body === null) {
+    return '';
   }
-  return text;
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
+  const onAbort = (): void => {
+    reader.cancel(new Error('aborted')).catch(() => undefined);
+  };
+  if (signal.aborted) {
+    reader.releaseLock();
+    throw new ProviderCallError('TIMEOUT', true);
+  }
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    for (;;) {
+      let read: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        read = await reader.read();
+      } catch {
+        throw new ProviderCallError('NETWORK_ERROR', true);
+      }
+      if (read.done) {
+        // Stream ditutup: bila karena abort/timeout, laporkan TIMEOUT agar tidak
+        // mengembalikan body terpotong yang kemudian gagal parse sebagai INVALID_RESPONSE.
+        if (signal.aborted) {
+          throw new ProviderCallError('TIMEOUT', true);
+        }
+        break;
+      }
+      bytes += read.value.byteLength;
+      if (bytes > MAX_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new ProviderCallError('INVALID_RESPONSE', false);
+      }
+      text += decoder.decode(read.value, { stream: true });
+      if (signal.aborted) {
+        await reader.cancel().catch(() => undefined);
+        throw new ProviderCallError('TIMEOUT', true);
+      }
+    }
+    text += decoder.decode();
+    if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) {
+      throw new ProviderCallError('INVALID_RESPONSE', false);
+    }
+    return text;
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+    reader.releaseLock();
+  }
 }
 
 async function send(
@@ -127,7 +181,7 @@ async function send(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl(url, { ...init, signal: controller.signal });
-    const body = await readBounded(res);
+    const body = await readBounded(res, controller.signal);
     return { status: res.status, body, headers: res.headers };
   } catch (err) {
     if (err instanceof ProviderCallError) throw err;

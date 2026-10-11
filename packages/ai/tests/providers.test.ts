@@ -270,3 +270,112 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter(null, NOW)).toBeNull();
   });
 });
+
+describe('readBounded streaming (Fase 2)', () => {
+  const streamJson = (chunks: Uint8Array[], headers: Record<string, string> = {}) => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const c of chunks) controller.enqueue(c);
+        controller.close();
+      },
+    });
+    return new Response(stream as never, { status: 200, headers });
+  };
+  const enc = new TextEncoder();
+
+  it('Content-Length terlalu besar ditolak tanpa membaca body', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(enc.encode('x'));
+        controller.close();
+      },
+    });
+    const res = new Response(stream as never, {
+      status: 200,
+      headers: { 'content-length': String(2_000_000) },
+    });
+    const e = await errorOf(
+      new GeminiClient(KEY, fakeFetch(() => res).fetch, () => NOW).generate(req()),
+    );
+    expect(e.kind).toBe('INVALID_RESPONSE');
+    expect(e.retryable).toBe(false);
+  });
+
+  it('chunked tanpa Content-Length yang melebihi batas bertahap → INVALID_RESPONSE', async () => {
+    const big1 = enc.encode('a'.repeat(600_000));
+    const big2 = enc.encode('b'.repeat(600_000));
+    const res = streamJson([big1, big2]);
+    const e = await errorOf(
+      new GeminiClient(KEY, fakeFetch(() => res).fetch, () => NOW).generate(req()),
+    );
+    expect(e.kind).toBe('INVALID_RESPONSE');
+    expect(e.retryable).toBe(false);
+  });
+
+  it('stream yang gagal di tengah → NETWORK_ERROR retryable', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode('{"candidates":['));
+        controller.error(new Error('stream broken'));
+      },
+    });
+    const res = new Response(stream as never, { status: 200 });
+    const e = await errorOf(
+      new GeminiClient(KEY, fakeFetch(() => res).fetch, () => NOW).generate(req()),
+    );
+    expect(e.kind).toBe('NETWORK_ERROR');
+    expect(e.retryable).toBe(true);
+  });
+
+  it('Content-Length invalid → INVALID_RESPONSE', async () => {
+    const res = new Response('ok', { status: 200, headers: { 'content-length': 'bukan-angka' } });
+    const e = await errorOf(
+      new GeminiClient(KEY, fakeFetch(() => res).fetch, () => NOW).generate(req()),
+    );
+    expect(e.kind).toBe('INVALID_RESPONSE');
+  });
+
+  it('batas tidak dilewati: body tepat di bawah batas tetap dibaca', async () => {
+    const payload = JSON.stringify(geminiOk('ok'));
+    const res = new Response(payload, { status: 200 });
+    const out = await new GeminiClient(KEY, fakeFetch(() => res).fetch, () => NOW).generate(req());
+    expect(out.text).toBe('ok');
+  });
+
+  it('abort saat streaming body → TIMEOUT retryable (bukan INVALID_RESPONSE)', async () => {
+    const controller = new AbortController();
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(c) {
+        await new Promise((r) => setTimeout(r, 50));
+        c.enqueue(enc.encode('{"candidates":[]}'));
+        c.close();
+      },
+    });
+    const res = new Response(stream as never, { status: 200 });
+    setTimeout(() => controller.abort(), 10);
+    const e = await errorOf(
+      new GeminiClient(KEY, fakeFetch(() => res).fetch, () => NOW).generate({
+        ...req(),
+        signal: controller.signal,
+      }),
+    );
+    expect(e.kind).toBe('TIMEOUT');
+    expect(e.retryable).toBe(true);
+  });
+
+  it('timeout internal saat stream lambat → TIMEOUT', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(c) {
+        await new Promise((r) => setTimeout(r, 200));
+        c.enqueue(enc.encode('x'));
+        c.close();
+      },
+    });
+    const res = new Response(stream as never, { status: 200 });
+    const e = await errorOf(
+      new GeminiClient(KEY, fakeFetch(() => res).fetch, () => NOW).generate(req({ timeoutMs: 30 })),
+    );
+    expect(e.kind).toBe('TIMEOUT');
+    expect(e.retryable).toBe(true);
+  });
+});
