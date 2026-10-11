@@ -228,3 +228,90 @@ describe('Strix runner (SIMULASI, biner palsu)', () => {
     expect(out.errorMessageSafe).toContain('1.7.0');
   });
 });
+
+describe('readRunArtifacts keamanan (Fase 2)', () => {
+  it('symlink direktori run di luar workDir ditolak', async () => {
+    const { mkdirSync, symlinkSync, writeFileSync: wfs } = await import('node:fs');
+    const { readRunArtifacts } = await import('../src/runner.js');
+    const work = mkdtempSync(path.join(tmpdir(), 'nwb-artifact-'));
+    const outside = mkdtempSync(path.join(tmpdir(), 'nwb-outside-'));
+    try {
+      mkdirSync(path.join(work, 'strix_runs'), { recursive: true });
+      mkdirSync(path.join(outside, 'evil'), { recursive: true });
+      wfs(path.join(outside, 'evil', 'run.json'), '{"status":"completed"}');
+      symlinkSync(path.join(outside, 'evil'), path.join(work, 'strix_runs', 'run_evil'));
+      const res = readRunArtifacts(work);
+      expect(res.runDir).toBeNull();
+      expect(res.parseError).toBe('run-dir-missing');
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('symlink file run.json ditolak sebagai invalid', async () => {
+    const { mkdirSync, symlinkSync, writeFileSync: wfs } = await import('node:fs');
+    const { readRunArtifacts } = await import('../src/runner.js');
+    const work = mkdtempSync(path.join(tmpdir(), 'nwb-artifact-'));
+    try {
+      const runDir = path.join(work, 'strix_runs', 'run_a');
+      mkdirSync(runDir, { recursive: true });
+      wfs(path.join(work, 'real-run.json'), '{"status":"completed"}');
+      symlinkSync(path.join(work, 'real-run.json'), path.join(runDir, 'run.json'));
+      const res = readRunArtifacts(work);
+      expect(res.parseError).toBe('run-json-invalid');
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('run.json terlalu besar ditolak sebelum dibaca penuh', async () => {
+    const { mkdirSync, writeFileSync: wfs } = await import('node:fs');
+    const { readRunArtifacts, STRIX_MAX_RUN_JSON_BYTES } = await import('../src/runner.js');
+    const work = mkdtempSync(path.join(tmpdir(), 'nwb-artifact-'));
+    try {
+      const runDir = path.join(work, 'strix_runs', 'run_big');
+      mkdirSync(runDir, { recursive: true });
+      const big = 'x'.repeat(STRIX_MAX_RUN_JSON_BYTES + 100);
+      wfs(path.join(runDir, 'run.json'), big);
+      const res = readRunArtifacts(work);
+      expect(res.parseError).toBe('run-json-invalid');
+      expect(res.runStatus).toBeNull();
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('terlalu banyak kandidat run ditolak', async () => {
+    const { mkdirSync } = await import('node:fs');
+    const { readRunArtifacts, STRIX_MAX_RUN_CANDIDATES } = await import('../src/runner.js');
+    const work = mkdtempSync(path.join(tmpdir(), 'nwb-artifact-'));
+    try {
+      const root = path.join(work, 'strix_runs');
+      mkdirSync(root, { recursive: true });
+      for (let i = 0; i < STRIX_MAX_RUN_CANDIDATES + 1; i++) {
+        mkdirSync(path.join(root, `run_${i}`));
+      }
+      const res = readRunArtifacts(work);
+      expect(res.parseError).toBe('too-many-candidates');
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('run.json invalid dan vulnerabilities.json hilang menghasilkan error terlihat', async () => {
+    const { mkdirSync, writeFileSync: wfs } = await import('node:fs');
+    const { readRunArtifacts } = await import('../src/runner.js');
+    const work = mkdtempSync(path.join(tmpdir(), 'nwb-artifact-'));
+    try {
+      const runDir = path.join(work, 'strix_runs', 'run_bad');
+      mkdirSync(runDir, { recursive: true });
+      wfs(path.join(runDir, 'run.json'), '{bukan json');
+      const res = readRunArtifacts(work);
+      expect(res.parseError).toBe('run-json-invalid');
+      expect(res.findings).toHaveLength(0);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+});

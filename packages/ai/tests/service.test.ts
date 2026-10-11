@@ -13,6 +13,7 @@ import {
   MODEL_REGISTRY,
   SETTINGS_KEYS,
   TASK_REQUIREMENTS,
+  MAX_PER_RUN_TRACKED,
   type FetchLike,
   type ModelEntry,
   type AiOutcome,
@@ -474,5 +475,36 @@ describe('AiService — keberhasilan, redaksi, dan usage', () => {
     const { svc } = service(cfg(), [ok()]);
     await svc.run(TEXT_REQ);
     expect(JSON.stringify(store.usage.list(10))).not.toContain(CANARY_KEY);
+  });
+});
+
+describe('perRun bounded (Fase 2)', () => {
+  it('Map tidak tumbuh tanpa batas; entri tertua dikeluarkan saat penuh', () => {
+    const { svc } = service(cfg(), [ok()]);
+    const internals = svc as unknown as {
+      perRun: Map<string, number>;
+      incrementPerRun: (k: string) => void;
+    };
+    const total = MAX_PER_RUN_TRACKED + 50;
+    for (let i = 0; i < total; i++) {
+      internals.incrementPerRun(`run-${i}`);
+    }
+    expect(internals.perRun.size).toBeLessThanOrEqual(MAX_PER_RUN_TRACKED);
+    expect(internals.perRun.size).toBe(MAX_PER_RUN_TRACKED);
+    // Entri tertua sudah keluar, entri terbaru masih ada
+    expect(internals.perRun.has('run-0')).toBe(false);
+    expect(internals.perRun.has(`run-${total - 1}`)).toBe(true);
+  });
+
+  it('increment pada key yang sama tidak memicu eviksi dan menambah hitungan', () => {
+    const { svc } = service(cfg(), [ok()]);
+    const internals = svc as unknown as {
+      perRun: Map<string, number>;
+      incrementPerRun: (k: string) => void;
+    };
+    internals.incrementPerRun('run-aktif');
+    internals.incrementPerRun('run-aktif');
+    expect(internals.perRun.get('run-aktif')).toBe(2);
+    expect(internals.perRun.size).toBe(1);
   });
 });

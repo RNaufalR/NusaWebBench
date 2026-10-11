@@ -1,5 +1,13 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, existsSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  lstatSync,
+  realpathSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
@@ -26,6 +34,10 @@ import { redactText } from '@nusawebbench/core';
 export const STRIX_PINNED_VERSION = '1.7.0';
 export const STRIX_SANDBOX_IMAGE = 'ghcr.io/usestrix/strix-sandbox:1.3.0';
 export const STRIX_MAX_OUTPUT_BYTES = 256 * 1024;
+/** Batas artefak: jumlah kandidat run, ukuran run.json, ukuran vulnerabilities.json. */
+export const STRIX_MAX_RUN_CANDIDATES = 100;
+export const STRIX_MAX_RUN_JSON_BYTES = 1 * 1024 * 1024;
+export const STRIX_MAX_VULN_JSON_BYTES = 5 * 1024 * 1024;
 const KILL_GRACE_MS = 10_000;
 
 export type StrixScanMode = 'quick' | 'standard' | 'deep';
@@ -243,38 +255,116 @@ type RunArtifacts = {
   parseError: string | null;
 };
 
-/** Membaca artefak run dari direktori kerja. Setiap kegagalan parse dilaporkan, tidak diabaikan. */
+/**
+ * Membaca artefak run dari direktori kerja. Setiap kegagalan parse dilaporkan, tidak diabaikan.
+ *
+ * Keamanan (Fase 2):
+ * - Symlink tidak diikuti: kandidat run dan file artefak yang berupa symlink ditolak.
+ * - Path run tervalidasi berada di dalam workDir (realpath).
+ * - Jumlah kandidat dibatasi (STRIX_MAX_RUN_CANDIDATES) sebelum stat/sort.
+ * - Ukuran file dibatasi sebelum dibaca (STRIX_MAX_RUN_JSON_BYTES / STRIX_MAX_VULN_JSON_BYTES).
+ * - TOCTOU (file hilang di tengah jalan) menghasilkan parseError, bukan crash.
+ */
 export function readRunArtifacts(workDir: string): RunArtifacts {
-  const runsRoot = path.join(workDir, 'strix_runs');
-  if (!existsSync(runsRoot)) {
+  let realWorkDir: string;
+  try {
+    realWorkDir = realpathSync(workDir);
+  } catch {
+    return { runDir: null, runStatus: null, findings: [], parseError: 'workdir-invalid' };
+  }
+  const runsRoot = path.join(realWorkDir, 'strix_runs');
+  let names: string[];
+  try {
+    const lst = lstatSync(runsRoot);
+    if (lst.isSymbolicLink() || !lst.isDirectory()) {
+      return { runDir: null, runStatus: null, findings: [], parseError: 'strix-runs-missing' };
+    }
+    names = readdirSync(runsRoot);
+  } catch {
     return { runDir: null, runStatus: null, findings: [], parseError: 'strix-runs-missing' };
   }
-  const candidates = readdirSync(runsRoot)
-    .map((name) => path.join(runsRoot, name))
-    .filter((p) => statSync(p).isDirectory())
-    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
-  const runDir = candidates[0];
+  if (names.length > STRIX_MAX_RUN_CANDIDATES) {
+    return { runDir: null, runStatus: null, findings: [], parseError: 'too-many-candidates' };
+  }
+  type Candidate = { dir: string; mtimeMs: number };
+  const candidates: Candidate[] = [];
+  for (const name of names) {
+    if (name === '.' || name === '..' || name.includes(path.sep)) continue;
+    const p = path.join(runsRoot, name);
+    let lst: ReturnType<typeof lstatSync>;
+    try {
+      lst = lstatSync(p);
+    } catch {
+      continue;
+    }
+    if (lst.isSymbolicLink()) continue;
+    if (!lst.isDirectory()) continue;
+    let real: string;
+    try {
+      real = realpathSync(p);
+    } catch {
+      continue;
+    }
+    if (real !== realWorkDir && !real.startsWith(realWorkDir + path.sep)) continue;
+    let mtimeMs = 0;
+    try {
+      mtimeMs = statSync(real).mtimeMs;
+    } catch {
+      continue;
+    }
+    candidates.push({ dir: real, mtimeMs });
+  }
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const runDir = candidates[0]?.dir;
   if (!runDir)
     return { runDir: null, runStatus: null, findings: [], parseError: 'run-dir-missing' };
 
+  const readBoundedFile = (
+    filePath: string,
+    maxBytes: number,
+  ): { ok: true; text: string } | { ok: false; error: string } => {
+    let lst: ReturnType<typeof lstatSync>;
+    try {
+      lst = lstatSync(filePath);
+    } catch {
+      return { ok: false, error: 'missing' };
+    }
+    if (lst.isSymbolicLink()) return { ok: false, error: 'symlink-refused' };
+    if (!lst.isFile()) return { ok: false, error: 'not-a-file' };
+    if (lst.size > maxBytes) return { ok: false, error: 'too-large' };
+    try {
+      return { ok: true, text: readFileSync(filePath, 'utf8') };
+    } catch {
+      return { ok: false, error: 'unreadable' };
+    }
+  };
+
   const recordPath = path.join(runDir, 'run.json');
-  if (!existsSync(recordPath)) {
-    return { runDir, runStatus: null, findings: [], parseError: 'run-json-missing' };
+  const recordRead = readBoundedFile(recordPath, STRIX_MAX_RUN_JSON_BYTES);
+  if (!recordRead.ok) {
+    if (recordRead.error === 'missing') {
+      return { runDir, runStatus: null, findings: [], parseError: 'run-json-missing' };
+    }
+    return { runDir, runStatus: null, findings: [], parseError: 'run-json-invalid' };
   }
   let runStatus: string;
   try {
-    const record = RunRecordSchema.parse(JSON.parse(readFileSync(recordPath, 'utf8')));
+    const record = RunRecordSchema.parse(JSON.parse(recordRead.text));
     runStatus = record.status;
   } catch {
     return { runDir, runStatus: null, findings: [], parseError: 'run-json-invalid' };
   }
 
   const vulnPath = path.join(runDir, 'vulnerabilities.json');
-  if (!existsSync(vulnPath)) {
-    return { runDir, runStatus, findings: [], parseError: null };
+  const vulnRead = readBoundedFile(vulnPath, STRIX_MAX_VULN_JSON_BYTES);
+  if (!vulnRead.ok) {
+    if (vulnRead.error === 'missing') {
+      return { runDir, runStatus, findings: [], parseError: null };
+    }
+    return { runDir, runStatus, findings: [], parseError: 'vulnerabilities-json-invalid' };
   }
   try {
-    const list = VulnerabilityListSchema.parse(JSON.parse(readFileSync(vulnPath, 'utf8')));
+    const list = VulnerabilityListSchema.parse(JSON.parse(vulnRead.text));
     return {
       runDir,
       runStatus,

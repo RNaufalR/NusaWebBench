@@ -23,6 +23,8 @@ import type { ProviderClient, ProviderImage } from './providers.js';
 /** Batas input sebelum request dikirim (taskbook T-110 instruksi 4). */
 export const MAX_PROMPT_CHARS = 8_000;
 export const MAX_OUTPUT_CHARS = 16_000;
+/** Batas entri per-run yang dilacak; mencegah Map tumbuh tanpa batas. */
+export const MAX_PER_RUN_TRACKED = 1_000;
 export const ALLOWED_IMAGE_MIME = ['image/png', 'image/jpeg', 'image/webp'] as const;
 export const SETTINGS_KEYS = {
   consent: 'ai.external_data_consent',
@@ -108,6 +110,13 @@ export class AiService {
   private readonly now: () => Date;
   private readonly sleep: (ms: number) => Promise<void>;
   readonly guard: BudgetGuard;
+  /**
+   * Penghitung request per run (Fase 2: bounded).
+   * Map dibatasi MAX_PER_RUN_TRACKED entri; entri tertua (kemungkinan run yang sudah selesai)
+   * dikeluarkan saat penuh agar state tidak tumbuh tanpa batas selama proses hidup.
+   * Penghapusan tidak memungkinkan bypass kuota untuk run aktif: run aktif selalu ada di Map
+   * karena baru saja diakses, dan eviksi hanya menyentuh entri terlama.
+   */
   private readonly perRun = new Map<string, number>();
 
   constructor(options: AiServiceOptions) {
@@ -140,6 +149,25 @@ export class AiService {
 
   private modelFor(provider: Provider): string {
     return provider === 'gemini' ? this.config.GEMINI_MODEL : this.config.GROQ_MODEL;
+  }
+
+  /**
+   * Increment penghitung per-run dengan batas ukuran Map.
+   * Bila Map penuh dan runKey belum ada, keluarkan entri tertua dulu.
+   * Entri yang baru diakses selalu ada (baru di-set), sehingga run aktif tidak kehilangan kuotanya.
+   */
+  private incrementPerRun(runKey: string): void {
+    const current = this.perRun.get(runKey);
+    if (current !== undefined) {
+      this.perRun.set(runKey, current + 1);
+      return;
+    }
+    while (this.perRun.size >= MAX_PER_RUN_TRACKED) {
+      const oldest = this.perRun.keys().next();
+      if (oldest.done) break;
+      this.perRun.delete(oldest.value);
+    }
+    this.perRun.set(runKey, 1);
   }
 
   private keyFor(provider: Provider): string {
@@ -242,7 +270,7 @@ export class AiService {
       const reservation = this.guard.reserve(routed.provider, this.config.AI_MAX_REQUESTS_PER_DAY);
       if (reservation === null) return this.unavailable('local-quota-exhausted');
       attempts += 1;
-      if (runKey !== null) this.perRun.set(runKey, (this.perRun.get(runKey) ?? 0) + 1);
+      if (runKey !== null) this.incrementPerRun(runKey);
 
       const started = this.now().getTime();
       try {
