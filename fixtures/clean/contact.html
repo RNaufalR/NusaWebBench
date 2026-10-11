@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="nwb-fixture" content="synthetic/demo" />
+    <title>Kontak — Toko Contoh</title>
+    <meta name="description" content="Halaman kontak (synthetic/demo)." />
+  </head>
+  <body>
+    <header>
+      <nav aria-label="Utama">
+        <a href="/index.html">Beranda</a>
+        <a href="/about.html">Tentang</a>
+        <a href="/contact.html">Kontak</a>
+      </nav>
+    </header>
+    <main>
+      <h1>Hubungi kami</h1>
+      <form action="/contact-submit" method="post">
+        <label for="nama">Nama</label>
+        <input id="nama" name="nama" type="text" required />
+        <label for="pesan">Pesan</label>
+        <textarea id="pesan" name="pesan" required></textarea>
+        <button type="submit">Kirim</button>
+      </form>
+    </main>
+  </body>
+</html>

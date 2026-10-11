@@ -1,0 +1,29 @@
+{
+  "name": "@nusawebbench/report",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Versioned JSON report, escaped HTML and Markdown exports, and safe report persistence.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@nusawebbench/core": "0.1.0",
+    "@nusawebbench/storage": "0.1.0",
+    "zod": "4.6.5"
+  }
+}

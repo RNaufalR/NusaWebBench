@@ -1,0 +1,32 @@
+{
+  "name": "@nusawebbench/lighthouse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lighthouse module (LIGHTHOUSE): performance dan accessibility report dengan metadata konfigurasi.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@nusawebbench/core": "0.1.0",
+    "@nusawebbench/orchestrator": "0.1.0",
+    "@nusawebbench/storage": "0.1.0",
+    "chrome-launcher": "1.2.2",
+    "lighthouse": "13.5.0",
+    "zod": "4.6.5"
+  }
+}

@@ -1,0 +1,81 @@
+name: CI
+
+# Verifikasi otomatis untuk main dan seluruh branch sesi (arena/**).
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gates (tanpa API key, tanpa target remote)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Clean install
+        run: npm ci --no-audit --no-fund
+      - name: Format, lint, typecheck, tests (tanpa browser), secret scan
+        run: npm run check
+      - name: Build semua paket
+        run: npm run build
+      - name: Smoke test dashboard dari dist (loopback, tanpa API key)
+        env:
+          DATABASE_PATH: ${{ runner.temp }}/nwb-smoke/db.sqlite
+          ARTIFACTS_DIR: ${{ runner.temp }}/nwb-smoke/artifacts
+          HOST: 127.0.0.1
+          PORT: '4178'
+        run: |
+          node packages/web/dist/main.js > "$RUNNER_TEMP/nwb-web.log" 2>&1 &
+          SERVER_PID=$!
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:4178/api/health >/dev/null 2>&1; then break; fi
+            sleep 0.5
+          done
+          curl -fsS http://127.0.0.1:4178/api/health
+          curl -fsS http://127.0.0.1:4178/api/providers/status > /dev/null
+          if grep -q -i "gsk_\|AIza" "$RUNNER_TEMP/nwb-web.log"; then echo "rahasia terdeteksi di log"; exit 1; fi
+          kill "$SERVER_PID" || true
+
+  browser-tests:
+    name: Tes browser (Chromium dari Playwright, wajib)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REQUIRE_BROWSER_TESTS: '1'
+      # Runner Ubuntu terbaru membatasi user namespace tanpa privilege sehingga sandbox Chrome
+      # (dipakai Lighthouse) dapat gagal. Opt-in ini hanya untuk runner CI sementara (R-LH-1).
+      NWB_CHROME_NO_SANDBOX: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Clean install
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium (Playwright)
+        run: npx playwright-core install --with-deps chromium
+      - name: Resolve Chromium path
+        run: |
+          CHROMIUM_PATH="$(node --input-type=module -e "import { chromium } from 'playwright-core'; process.stdout.write(chromium.executablePath());")"
+          test -x "$CHROMIUM_PATH"
+          echo "CHROMIUM_PATH=$CHROMIUM_PATH" >> "$GITHUB_ENV"
+      - name: Run full test suite with browser tests
+        run: npx vitest run --reporter=verbose --reporter=github-actions

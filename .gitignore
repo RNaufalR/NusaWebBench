@@ -1,0 +1,36 @@
+# Dependencies & build output
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Runtime data: database, artifacts, reports, traces, screenshots — never commit
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+artifacts/
+reports/
+playwright-report/
+test-results/
+blob-report/
+*.trace.zip
+*.har
+
+# Secrets & local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.npmrc.local
+
+# Logs & OS/editor noise
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
