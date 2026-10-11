@@ -1378,3 +1378,44 @@ Tidak dieksekusi (perlu otorisasi terpisah): GitHub Environment, ruleset, branch
 ## Log task lainnya
 
 Lihat bagian per task di atas.
+
+---
+
+## Hardening putaran lanjutan (2026-10-11, commit f8bfbf3 dan 344c54c)
+
+Perubahan yang dibuat pada branch `arena/48bd00ed-nusawebbench` setelah `2aaf79f`:
+
+1. **Provider response streaming** (`packages/ai/src/providers.ts`, commit `f8bfbf3`):
+   - `readBounded()` membaca via `ReadableStream` reader dan memeriksa `MAX_RESPONSE_BYTES`
+     per chunk, bukan setelah `res.text()` memuat seluruh body.
+   - `Content-Length` invalid/negatif ditolak sebagai `INVALID_RESPONSE`.
+   - Stream yang gagal di tengah dipetakan ke `NETWORK_ERROR` (retryable).
+   - Abort/timeout selama streaming membatalkan reader → `TIMEOUT`.
+   - 5 tes regresi baru di `packages/ai/tests/providers.test.ts`.
+
+2. **Artefak Strix** (`packages/security-strix/src/runner.ts`, commit `344c54c`):
+   - `readRunArtifacts()`: tolak symlink (direktori dan file), validasi realpath di dalam
+     workDir, batasi 100 kandidat, batasi ukuran `run.json` (1MB) dan `vulnerabilities.json`
+     (5MB) sebelum baca, tangani TOCTOU tanpa crash.
+   - 5 tes keamanan baru di `packages/security-strix/tests/runner.test.ts`.
+
+3. **Batas perRun AI** (`packages/ai/src/service.ts`, commit `344c54c`):
+   - `perRun` Map dibatasi `MAX_PER_RUN_TRACKED` (1000) entri; eviksi entri tertua via
+     `incrementPerRun()`. Mencegah tumbuh tanpa batas tanpa memungkinkan bypass kuota run aktif.
+   - 2 tes baru di `packages/ai/tests/service.test.ts`.
+
+4. **Verifikasi tanpa perubahan kode**:
+   - `ArtifactStore` (`packages/storage/src/artifacts.ts`): sudah hardened (atomic write,
+     tolak symlink/path-escape, verifikasi hash, batas ukuran, cleanup yatim). Tidak diubah.
+   - Registry AI (`packages/ai/src/registry.ts`): `verifiedOn` 2026-10-09, belum stale
+     (batas 90 hari), sumber dicantumkan per model. Tidak diubah.
+   - Dashboard (`packages/web/src/app.ts`): sudah mendokumentasikan modul yang belum
+     disambungkan (`LOAD_K6`, `SECURITY_STRIX`, `AI_*`). Tidak diubah.
+   - F-04: environment `strix-live` tetap belum ada (API: total 0) — BLOCKED, perlu pemilik.
+   - H5, H7, R-AI-Q: referensi tanpa definisi di dokumen manapun — tidak dapat diverifikasi.
+
+**Gerbang yang dijalankan (2026-10-11, Node 24):**
+- `npm run test`: 641 passed, 47 skipped, 0 failed.
+- `npm run format:check`, `npm run lint`, `npm run typecheck`: bersih.
+- `npm run secret-scan`: 170 files, 0 temuan.
+- `git diff --check`: bersih.
