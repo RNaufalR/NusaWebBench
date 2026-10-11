@@ -863,7 +863,7 @@ Keputusan:
 
 - Server hanya bind ke loopback; alamat lain ditolak sebelum `listen` (`assertLoopbackBind`). Ini berarti preview publik sandbox tidak dapat mengakses dashboard secara langsung (R-WEB-1).
 - Host harus `127.0.0.1` atau `localhost` (anti DNS rebinding). Origin untuk metode yang mengubah state harus sama dengan Host; Sec-Fetch-Site lintas-situs ditolak.
-- Dashboard MVP menyediakan tiga modul: `FUNCTIONAL_QA`, `UX_RULES`, `LIGHTHOUSE`. `LOAD_K6`, `SECURITY_STRIX`, dan modul AI belum disambungkan dan mengembalikan 422 `MODULE_NOT_AVAILABLE`.
+- Dashboard menyediakan lima modul: `FUNCTIONAL_QA`, `UX_RULES`, `LIGHTHOUSE`, `LOAD_K6`, `SECURITY_STRIX`. Modul AI belum disambungkan dan mengembalikan 422 `MODULE_NOT_AVAILABLE`. `LOAD_K6`/`SECURITY_STRIX` tersambung dengan gerbangnya masing-masing (default nonaktif via `K6_ENABLED`/`STRIX_ENABLED`; tanpa biner/kunci/model → `UNAVAILABLE`/`SKIPPED` yang jujur) dan butuh konfirmasi risiko eksplisit (`riskAcknowledged`) selain `acknowledged` generik.
 - Pembuatan run melalui `RunOrchestrator.createRun` (satu sumber aturan plan, otorisasi, dan idempotensi). Dashboard tidak menduplikasi logika itu.
 - Target mode `url` (remote) dengan modul berbasis browser diblokir oleh `buildRunPlan`. Perbaikan selama T-140: `UX_RULES` ditambahkan ke `REMOTE_NOT_ENFORCEABLE_MODULES` karena memakai Chromium yang sama dan DNS pinning belum dapat dijamin (sesuai keputusan T-040 tentang modul browser).
 - Tidak ada jalur konfirmasi scope terpisah: `scopeConfirmedAt` tidak pernah diisi di kode, sehingga persetujuan per run (`acknowledged: true`) dan preview plan menjadi gerbang yang berlaku.
@@ -1015,7 +1015,7 @@ Batasan:
 - "Overload" diuji sebagai server yang melewati timeout request. Beban besar tidak diuji, dan memang dicegah oleh batas budget.
 - Stop condition berbasis threshold dan durasi scenario. Belum ada stop berbasis jumlah error absolut.
 - Remote tidak diizinkan pada MVP, sesuai taskbook dan README.
-- Dashboard belum menyambungkan LOAD_K6 (422 `MODULE_NOT_AVAILABLE`).
+- Dashboard menyambungkan LOAD_K6 (sebelumnya 422 `MODULE_NOT_AVAILABLE`); tanpa `K6_ENABLED`/biner → `SKIPPED`/`UNAVAILABLE` yang jujur, dan butuh `riskAcknowledged`.
 - Binary tidak disimpan di repository.
 
 ---
@@ -1409,8 +1409,9 @@ Perubahan yang dibuat pada branch `arena/48bd00ed-nusawebbench` setelah `2aaf79f
      tolak symlink/path-escape, verifikasi hash, batas ukuran, cleanup yatim). Tidak diubah.
    - Registry AI (`packages/ai/src/registry.ts`): `verifiedOn` 2026-10-09, belum stale
      (batas 90 hari), sumber dicantumkan per model. Tidak diubah.
-   - Dashboard (`packages/web/src/app.ts`): sudah mendokumentasikan modul yang belum
-     disambungkan (`LOAD_K6`, `SECURITY_STRIX`, `AI_*`). Tidak diubah.
+   - Dashboard (`packages/web/src/app.ts`): `LOAD_K6` dan `SECURITY_STRIX` kini
+     disambungkan ke dashboard dengan gerbang keamanan masing-masing (Fase 3/3b);
+     modul `AI_*` tetap belum disambungkan (422 `MODULE_NOT_AVAILABLE`).
    - F-04: environment `strix-live` tetap belum ada (API: total 0) — BLOCKED, perlu pemilik.
    - H5, H7, R-AI-Q: referensi tanpa definisi di dokumen manapun — tidak dapat diverifikasi.
 
