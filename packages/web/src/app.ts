@@ -28,13 +28,17 @@ export const MODULE_LABELS: Readonly<Partial<Record<ModuleName, string>>> = Obje
   FUNCTIONAL_QA: 'QA fungsional (Chromium)',
   UX_RULES: 'UX dan aksesibilitas (deterministik)',
   LIGHTHOUSE: 'Lighthouse (performa dan aksesibilitas)',
+  LOAD_K6: 'Load test k6 (terbatas, opt-in)',
+  SECURITY_STRIX: 'Security scan Strix (opt-in, lokal saja)',
 });
 
-/** Modul yang punya adapter di dashboard MVP. LOAD_K6, SECURITY_STRIX, AI_* belum disambungkan. */
+/** Modul yang punya adapter di dashboard. Semuanya melewati gerbang keamanannya masing-masing. */
 export const WEB_MODULES: readonly ModuleName[] = Object.freeze([
   'FUNCTIONAL_QA',
   'UX_RULES',
   'LIGHTHOUSE',
+  'LOAD_K6',
+  'SECURITY_STRIX',
 ]);
 
 const ID = /^[a-z]+_[a-f0-9]{32}$/;
@@ -48,13 +52,13 @@ const CreateTargetSchema = z.strictObject({
 
 const RunRequestSchema = z.strictObject({
   targetId: z.string().min(1).max(80),
-  modules: z.array(z.enum(MODULE_NAMES)).min(1).max(3),
+  modules: z.array(z.enum(MODULE_NAMES)).min(1).max(5),
   acknowledged: z.literal(true),
 });
 
 const PlanRequestSchema = z.strictObject({
   targetId: z.string().min(1).max(80),
-  modules: z.array(z.enum(MODULE_NAMES)).min(1).max(3),
+  modules: z.array(z.enum(MODULE_NAMES)).min(1).max(5),
 });
 
 const ProviderTestSchema = z.strictObject({ confirm: z.literal(true) });

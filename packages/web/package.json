@@ -26,8 +26,10 @@
     "@nusawebbench/browser-qa": "0.1.0",
     "@nusawebbench/core": "0.1.0",
     "@nusawebbench/lighthouse": "0.1.0",
+    "@nusawebbench/load-k6": "0.1.0",
     "@nusawebbench/orchestrator": "0.1.0",
     "@nusawebbench/report": "0.1.0",
+    "@nusawebbench/security-strix": "0.1.0",
     "@nusawebbench/storage": "0.1.0",
     "@nusawebbench/ux-rules": "0.1.0",
     "zod": "4.6.5"

@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { AppError, loadConfig } from '@nusawebbench/core';
 import { FunctionalQaAdapter } from '@nusawebbench/browser-qa';
+import { K6Adapter } from '@nusawebbench/load-k6';
+import { StrixAdapter } from '@nusawebbench/security-strix';
 import { startFixture } from '@nusawebbench/fixtures';
 import {
   RunOrchestrator,
@@ -77,6 +79,9 @@ beforeAll(async () => {
       new FunctionalQaAdapter({ artifacts, ...(BROWSER ? { executablePath: BROWSER } : {}) }),
       new UxRulesAdapter({ artifacts, ...(BROWSER ? { executablePath: BROWSER } : {}) }),
       gate.adapter,
+      // Cerminkan main.ts: k6/Strix tersambung dengan gerbang default nonaktif.
+      new K6Adapter({ artifacts }),
+      new StrixAdapter({}),
     ],
   });
   const aiSettings = new AiSettingsService(store, config);
@@ -267,6 +272,11 @@ describe('target', () => {
   });
 });
 
+type RunDetail = {
+  status: string;
+  modules: { module: string; status: string; skippedReason: string | null }[];
+};
+
 describe('run: validasi, scope, dan idempotensi', () => {
   let fixtureTargetId = '';
   let remoteTargetId = '';
@@ -297,11 +307,52 @@ describe('run: validasi, scope, dan idempotensi', () => {
     expect(unknown.status).toBe(400);
     const unavailable = await call('POST', '/api/runs', {
       targetId: fixtureTargetId,
-      modules: ['LOAD_K6'],
+      modules: ['AI_TEXT'],
       acknowledged: true,
     });
     expect(unavailable.status).toBe(422);
     expect(unavailable.json).toMatchObject({ error: 'MODULE_NOT_AVAILABLE' });
+  });
+
+  it('LOAD_K6 tersambung di API tetapi SKIPPED jujur saat nonaktif (k6-disabled)', async () => {
+    const run = await call('POST', '/api/runs', {
+      targetId: fixtureTargetId,
+      modules: ['LOAD_K6'],
+      acknowledged: true,
+    });
+    // Diterima API (202): modul sudah tersambung, bukan lagi 422 MODULE_NOT_AVAILABLE.
+    expect(run.status).toBe(202);
+    const runId = (run.json as { id: string }).id;
+    let body: RunDetail | null = null;
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      body = (await call('GET', `/api/runs/${runId}`)).json as RunDetail;
+      if (body && ['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED'].includes(body.status)) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    // Run FAILED adalah semantik agregasi yang dirancang: tidak ada modul yang tereksekusi
+    // (bukan keberhasilan palsu). Status jujur ada di level modul:
+    const k6 = body?.modules.find((m) => m.module === 'LOAD_K6');
+    expect(k6).toMatchObject({ status: 'SKIPPED', skippedReason: 'k6-disabled' });
+  });
+
+  it('SECURITY_STRIX tersambung di API tetapi SKIPPED jujur saat nonaktif (strix-disabled)', async () => {
+    const run = await call('POST', '/api/runs', {
+      targetId: fixtureTargetId,
+      modules: ['SECURITY_STRIX'],
+      acknowledged: true,
+    });
+    expect(run.status).toBe(202);
+    const runId = (run.json as { id: string }).id;
+    let body: RunDetail | null = null;
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      body = (await call('GET', `/api/runs/${runId}`)).json as RunDetail;
+      if (body && ['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED'].includes(body.status)) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const strix = body?.modules.find((m) => m.module === 'SECURITY_STRIX');
+    expect(strix).toMatchObject({ status: 'SKIPPED', skippedReason: 'strix-disabled' });
   });
 
   it('target remote dengan modul browser diblokir oleh plan (422), dan pratinjau menyatakannya', async () => {

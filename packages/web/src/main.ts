@@ -14,6 +14,8 @@ import path from 'node:path';
 import { loadConfig } from '@nusawebbench/core';
 import { FunctionalQaAdapter } from '@nusawebbench/browser-qa';
 import { LighthouseAdapter } from '@nusawebbench/lighthouse';
+import { K6Adapter } from '@nusawebbench/load-k6';
+import { StrixAdapter } from '@nusawebbench/security-strix';
 import { RunOrchestrator } from '@nusawebbench/orchestrator';
 import { AiService, AiSettingsService, GeminiClient, GroqClient } from '@nusawebbench/ai';
 import { UxRulesAdapter } from '@nusawebbench/ux-rules';
@@ -41,6 +43,18 @@ async function main(): Promise<void> {
       new FunctionalQaAdapter({ artifacts }),
       new UxRulesAdapter({ artifacts }),
       new LighthouseAdapter({ artifacts }),
+      // LOAD_K6 dan SECURITY_STRIX disambungkan dengan gerbang keamanan masing-masing tetap
+      // aktif: default nonaktif (K6_ENABLED/STRIX_ENABLED=false); tanpa biner/tool → UNAVAILABLE;
+      // tanpa kunci/model → UNAVAILABLE; Strix hanya untuk target lokal (lihat adapter).
+      new K6Adapter({ artifacts, config: { enabled: config.K6_ENABLED } }),
+      new StrixAdapter({
+        config: { enabled: config.STRIX_ENABLED },
+        ...(process.env['STRIX_BIN'] ? { strixBin: process.env['STRIX_BIN'] } : {}),
+        providerKeys: {
+          ...(config.GEMINI_API_KEY ? { gemini: config.GEMINI_API_KEY } : {}),
+          ...(config.GROQ_API_KEY ? { groq: config.GROQ_API_KEY } : {}),
+        },
+      }),
     ],
     log: (m) => out(`[nwb] ${m}`),
   });
@@ -89,7 +103,12 @@ async function main(): Promise<void> {
               ? 'ditemukan'
               : 'tidak diatur atau tidak ada',
           k6: k6Path !== '' && existsSync(k6Path) ? 'ditemukan' : 'tidak diatur (opsional)',
-          strix: config.STRIX_ENABLED ? 'diaktifkan (gerbang belum lengkap)' : 'nonaktif (default)',
+          strix:
+            config.STRIX_ENABLED && process.env['STRIX_BIN']
+              ? 'diaktifkan (6 gerbang preflight: opt-in, lokal, docker, kunci/model, biner, versi)'
+              : config.STRIX_ENABLED
+                ? 'diaktifkan tetapi STRIX_BIN belum dikonfigurasi → UNAVAILABLE'
+                : 'nonaktif (default)',
         },
         ai: { provider: config.AI_PROVIDER, freeTierLock: config.FREE_TIER_LOCK },
         telemetry: 'tidak ada (diagnostik lokal saja)',
