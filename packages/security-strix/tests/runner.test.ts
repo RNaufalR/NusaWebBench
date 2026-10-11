@@ -314,4 +314,69 @@ describe('readRunArtifacts keamanan (Fase 2)', () => {
       rmSync(work, { recursive: true, force: true });
     }
   });
+
+  it('temuan melebihi batas jumlah → too-many-findings (fail-closed, tidak dipotong diam-diam)', async () => {
+    const { mkdirSync, writeFileSync: wfs } = await import('node:fs');
+    const { readRunArtifacts, STRIX_MAX_FINDINGS } = await import('../src/runner.js');
+    const work = mkdtempSync(path.join(tmpdir(), 'nwb-artifact-'));
+    try {
+      const runDir = path.join(work, 'strix_runs', 'run_many');
+      mkdirSync(runDir, { recursive: true });
+      wfs(path.join(runDir, 'run.json'), '{"status":"completed"}');
+      const vulns = Array.from({ length: STRIX_MAX_FINDINGS + 1 }, (_, i) => ({
+        id: `v${i}`,
+        title: `Temuan ${i}`,
+        severity: 'low',
+      }));
+      wfs(path.join(runDir, 'vulnerabilities.json'), JSON.stringify(vulns));
+      const res = readRunArtifacts(work);
+      expect(res.parseError).toBe('too-many-findings');
+      expect(res.findings).toHaveLength(0);
+      expect(res.runStatus).toBe('completed');
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('field temuan melebihi batas panjang → vulnerabilities-json-invalid', async () => {
+    const { mkdirSync, writeFileSync: wfs } = await import('node:fs');
+    const { readRunArtifacts, STRIX_MAX_FIELD_CHARS } = await import('../src/runner.js');
+    const work = mkdtempSync(path.join(tmpdir(), 'nwb-artifact-'));
+    try {
+      const runDir = path.join(work, 'strix_runs', 'run_wide');
+      mkdirSync(runDir, { recursive: true });
+      wfs(path.join(runDir, 'run.json'), '{"status":"completed"}');
+      const vulns = [
+        {
+          id: 'v1',
+          title: 'x',
+          severity: 'high',
+          description: 'y'.repeat(STRIX_MAX_FIELD_CHARS + 1),
+        },
+      ];
+      wfs(path.join(runDir, 'vulnerabilities.json'), JSON.stringify(vulns));
+      const res = readRunArtifacts(work);
+      expect(res.parseError).toBe('vulnerabilities-json-invalid');
+      expect(res.findings).toHaveLength(0);
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('hasil runStrixProcess tidak mengekspos path direktori run yang sudah dihapus', async () => {
+    const bin = fakeStrix('strix-norundir', { exit: 0 });
+    const raw = await runStrixProcess({
+      bin,
+      target: LOCAL.origin,
+      scanMode: 'quick',
+      maxBudgetUsd: 0.5,
+      maxTurns: 30,
+      llmRoute: 'gemini/gemini-3.8-flash',
+      apiKey: KEY,
+      timeoutMs: 30_000,
+      signal: new AbortController().signal,
+    });
+    expect(raw).not.toHaveProperty('runDir');
+    expect(raw.runStatus).toBe('completed');
+  });
 });

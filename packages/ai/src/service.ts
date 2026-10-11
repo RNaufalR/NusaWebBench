@@ -111,11 +111,12 @@ export class AiService {
   private readonly sleep: (ms: number) => Promise<void>;
   readonly guard: BudgetGuard;
   /**
-   * Penghitung request per run (Fase 2: bounded).
-   * Map dibatasi MAX_PER_RUN_TRACKED entri; entri tertua (kemungkinan run yang sudah selesai)
-   * dikeluarkan saat penuh agar state tidak tumbuh tanpa batas selama proses hidup.
-   * Penghapusan tidak memungkinkan bypass kuota untuk run aktif: run aktif selalu ada di Map
-   * karena baru saja diakses, dan eviksi hanya menyentuh entri terlama.
+   * Penghitung request per run (Fase 2: bounded, LRU).
+   * Map dibatasi MAX_PER_RUN_TRACKED entri. Entri yang baru dipakai dipindah ke posisi
+   * terbaru (delete + set ulang, karena Map.set pada key lama TIDAK me-refresh urutan),
+   * sehingga eviksi hanya menyentuh run yang benar-benar tidak aktif. Tanpa ini, run aktif
+   * yang berumur panjang tetap di posisi "tertua" dan bisa tereviksi → kuotanya ter-reset →
+   * batas request per run dapat dilewati oleh retry paralel.
    */
   private readonly perRun = new Map<string, number>();
 
@@ -152,13 +153,16 @@ export class AiService {
   }
 
   /**
-   * Increment penghitung per-run dengan batas ukuran Map.
-   * Bila Map penuh dan runKey belum ada, keluarkan entri tertua dulu.
-   * Entri yang baru diakses selalu ada (baru di-set), sehingga run aktif tidak kehilangan kuotanya.
+   * Increment penghitung per-run dengan batas ukuran Map (eviksi LRU).
+   * Bila Map penuh dan runKey belum ada, keluarkan entri yang paling lama tidak dipakai.
+   * Run yang aktif tidak kehilangan kuotanya: setiap pemakaian memindahkannya ke posisi terbaru.
    */
   private incrementPerRun(runKey: string): void {
     const current = this.perRun.get(runKey);
     if (current !== undefined) {
+      // Map.set pada key yang sudah ada tidak mengubah urutan iterasi, jadi hapus dulu
+      // agar entri aktif menjadi yang terbaru dan tidak tereviksi sebagai "tertua".
+      this.perRun.delete(runKey);
       this.perRun.set(runKey, current + 1);
       return;
     }

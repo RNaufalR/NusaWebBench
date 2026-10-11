@@ -507,4 +507,22 @@ describe('perRun bounded (Fase 2)', () => {
     expect(internals.perRun.get('run-aktif')).toBe(2);
     expect(internals.perRun.size).toBe(1);
   });
+
+  it('run aktif yang terus dipakai tidak tereviksi (LRU); kuotanya tidak ter-reset', () => {
+    const { svc } = service(cfg(), [ok()]);
+    const internals = svc as unknown as {
+      perRun: Map<string, number>;
+      incrementPerRun: (k: string) => void;
+    };
+    internals.incrementPerRun('run-aktif');
+    // Tekanan eviksi dari 1000 run lain, sambil run-aktif terus dipakai (mis. retry paralel).
+    for (let i = 0; i < MAX_PER_RUN_TRACKED; i++) {
+      internals.incrementPerRun(`run-${i}`);
+      internals.incrementPerRun('run-aktif');
+    }
+    // Tanpa LRU, run-aktif akan tereviksi sebagai "tertua" dan hitungannya kembali ke 1
+    // → batas request per run dapat dilewati.
+    expect(internals.perRun.get('run-aktif')).toBe(MAX_PER_RUN_TRACKED + 1);
+    expect(internals.perRun.size).toBeLessThanOrEqual(MAX_PER_RUN_TRACKED);
+  });
 });

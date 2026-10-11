@@ -38,6 +38,9 @@ export const STRIX_MAX_OUTPUT_BYTES = 256 * 1024;
 export const STRIX_MAX_RUN_CANDIDATES = 100;
 export const STRIX_MAX_RUN_JSON_BYTES = 1 * 1024 * 1024;
 export const STRIX_MAX_VULN_JSON_BYTES = 5 * 1024 * 1024;
+/** Batas temuan: jumlah temuan dan panjang field string (input dari tool eksternal tidak tepercaya). */
+export const STRIX_MAX_FINDINGS = 1000;
+export const STRIX_MAX_FIELD_CHARS = 100_000;
 const KILL_GRACE_MS = 10_000;
 
 export type StrixScanMode = 'quick' | 'standard' | 'deep';
@@ -63,7 +66,8 @@ export type StrixProcessResult = {
   readonly durationMs: number;
   /** Keluaran terakhir yang SUDAH diredaksi. Hanya untuk log, tidak pernah masuk ke hasil modul. */
   readonly outputTail: string;
-  readonly runDir: string | null;
+  // Catatan: path direktori run TIDAK diekspos — workDir dihapus pada finally sehingga
+  // path tersebut tidak valid lagi bagi pemanggil. Jangan mengembalikan path artefak basi.
   readonly runStatus: string | null;
   readonly findings: readonly StrixFinding[];
   readonly parseError: string | null;
@@ -86,9 +90,9 @@ const VulnerabilitySchema = z.looseObject({
   id: z.string().min(1).max(200),
   title: z.string().min(1).max(500),
   severity: z.string().min(1).max(50),
-  description: z.string().optional(),
-  impact: z.string().optional(),
-  remediation_steps: z.string().optional(),
+  description: z.string().max(STRIX_MAX_FIELD_CHARS).optional(),
+  impact: z.string().max(STRIX_MAX_FIELD_CHARS).optional(),
+  remediation_steps: z.string().max(STRIX_MAX_FIELD_CHARS).optional(),
 });
 const VulnerabilityListSchema = z.array(VulnerabilitySchema);
 
@@ -164,7 +168,6 @@ export async function runStrixProcess(opts: StrixRunOptions): Promise<StrixProce
       cancelled: exec.cancelled,
       durationMs: Date.now() - started,
       outputTail,
-      runDir: artifacts.runDir,
       runStatus: artifacts.runStatus,
       findings: artifacts.findings,
       parseError: artifacts.parseError,
@@ -365,6 +368,10 @@ export function readRunArtifacts(workDir: string): RunArtifacts {
   }
   try {
     const list = VulnerabilityListSchema.parse(JSON.parse(vulnRead.text));
+    // Batas jumlah temuan: fail-closed dengan parseError, bukan potong diam-diam.
+    if (list.length > STRIX_MAX_FINDINGS) {
+      return { runDir, runStatus, findings: [], parseError: 'too-many-findings' };
+    }
     return {
       runDir,
       runStatus,

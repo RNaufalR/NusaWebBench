@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   aggregateRunStatus,
   buildRunPlan,
+  IDEMPOTENCY_TTL_MS,
+  MAX_IDEMPOTENCY_KEYS,
   RunOrchestrator,
   type ModuleAdapter,
   type ModuleContext,
@@ -225,6 +227,44 @@ describe('buildRunPlan dan consent', () => {
     const b = newRun(o, ['UX_RULES'], 'key-1');
     expect(b.id).toBe(a.id);
     expect(store.runs.list()).toHaveLength(1);
+  });
+
+  it('idempotency key kedaluwarsa setelah TTL → pemakaian ulang membuat run baru', () => {
+    let nowMs = Date.now();
+    const o = orchestrator([adapter('UX_RULES', () => PASS)], { now: () => new Date(nowMs) });
+    const a = newRun(o, ['UX_RULES'], 'key-ttl');
+    expect(newRun(o, ['UX_RULES'], 'key-ttl').id).toBe(a.id);
+    nowMs += IDEMPOTENCY_TTL_MS + 1;
+    const b = newRun(o, ['UX_RULES'], 'key-ttl');
+    expect(b.id).not.toBe(a.id);
+    expect(store.runs.list()).toHaveLength(2);
+  });
+
+  it('idempotency key menunjuk run yang sudah tidak ada → membuat run baru', () => {
+    const o = orchestrator([adapter('UX_RULES', () => PASS)]);
+    const internals = o as unknown as {
+      idempotency: Map<string, { runId: string; expiresAt: number }>;
+    };
+    internals.idempotency.set('key-hilang', {
+      runId: 'run_tidak_ada',
+      expiresAt: Date.now() + 60_000,
+    });
+    const b = newRun(o, ['UX_RULES'], 'key-hilang');
+    expect(b.id).not.toBe('run_tidak_ada');
+    expect(store.runs.list()).toHaveLength(1);
+  });
+
+  it('jumlah idempotency key dibatasi (tidak tumbuh tanpa batas)', () => {
+    const o = orchestrator([adapter('UX_RULES', () => PASS)]);
+    const internals = o as unknown as { idempotency: Map<string, unknown> };
+    for (let i = 0; i < MAX_IDEMPOTENCY_KEYS + 50; i++) {
+      newRun(o, ['UX_RULES'], `key-${i}`);
+    }
+    expect(internals.idempotency.size).toBeLessThanOrEqual(MAX_IDEMPOTENCY_KEYS);
+    // Key terbaru masih dideduplikasi.
+    const before = store.runs.list().length;
+    newRun(o, ['UX_RULES'], `key-${MAX_IDEMPOTENCY_KEYS + 49}`);
+    expect(store.runs.list()).toHaveLength(before);
   });
 });
 

@@ -71,6 +71,16 @@ export type ProgressEvent = { runId: string; module: ModuleName; seq: number; me
 const MODULES_KEY = 'MODULES';
 
 /**
+ * Masa berlaku idempotency key. Key yang sama dalam window ini mengembalikan run yang sudah
+ * ada (deduplikasi double submit/retry). Setelah kedaluwarsa, key boleh membuat run baru.
+ */
+export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+/** Batas entri idempotency agar Map tidak tumbuh tanpa batas selama proses hidup. */
+export const MAX_IDEMPOTENCY_KEYS = 10_000;
+
+type IdempotencyEntry = { runId: string; expiresAt: number };
+
+/**
  * Orchestrator run (taskbook T-050). Satu run dieksekusi pada satu waktu melalui antrean
  * serial. Setiap transisi status memakai compare-and-set pada storage. Modul dijalankan
  * berurutan; kegagalan satu modul diisolasi dan tidak menghentikan modul independen.
@@ -81,7 +91,19 @@ export class RunOrchestrator {
   private readonly now: () => Date;
   private readonly log: (message: string) => void;
   private readonly controllers = new Map<string, AbortController>();
-  private readonly idempotency = new Map<string, string>();
+  /**
+   * Deduplikasi double submit/retry per idempotency key.
+   *
+   * Semantik eksplisit:
+   * - Berlaku selama IDEMPOTENCY_TTL_MS sejak run dibuat; setelah itu key kedaluwarsa dan
+   *   boleh membuat run baru.
+   * - Hanya di memori proses: tidak bertahan lintas restart. Setelah restart, key yang
+   *   dipakai ulang akan membuat run baru (didokumentasikan, bukan dianggap persisten).
+   * - Dibatasi MAX_IDEMPOTENCY_KEYS entri (eviksi tertua + pembersihan kedaluwarsa).
+   * - Check-and-set bersifat atomik (sinkron, single-thread): tidak ada race antar
+   *   pemanggil bersamaan.
+   */
+  private readonly idempotency = new Map<string, IdempotencyEntry>();
   private readonly progressLog: ProgressEvent[] = [];
   private queue: Promise<void> = Promise.resolve();
   private closing = false;
@@ -102,8 +124,8 @@ export class RunOrchestrator {
   }
 
   /**
-   * Membuat run QUEUED. Idempotency key yang sama mengembalikan run yang sudah ada, sehingga
-   * double click atau retry API tidak membuat run ganda.
+   * Membuat run QUEUED. Idempotency key yang sama mengembalikan run yang sudah ada selama
+   * masa berlakunya, sehingga double click atau retry API tidak membuat run ganda.
    */
   createRun(input: {
     target: Target;
@@ -117,10 +139,17 @@ export class RunOrchestrator {
       throw new AppError('CONFLICT', { safeMessage: 'Server sedang berhenti. Coba lagi nanti.' });
     }
     if (input.idempotencyKey !== undefined) {
-      const existingId = this.idempotency.get(input.idempotencyKey);
-      if (existingId !== undefined) {
-        const existing = this.store.runs.get(existingId);
-        if (existing) return existing;
+      const entry = this.idempotency.get(input.idempotencyKey);
+      if (entry !== undefined) {
+        if (entry.expiresAt <= this.now().getTime()) {
+          // Key kedaluwarsa: hapus agar pemakaian ulang membuat run baru.
+          this.idempotency.delete(input.idempotencyKey);
+        } else {
+          const existing = this.store.runs.get(entry.runId);
+          // Bila run sudah tidak ada di store (mis. dibersihkan retensi), jatuh ke
+          // pembuatan run baru di bawah dan key ditimpa.
+          if (existing) return existing;
+        }
       }
     }
     if (input.target.mode === 'repository') {
@@ -163,9 +192,23 @@ export class RunOrchestrator {
     });
     this.store.runs.insert(run);
     if (input.idempotencyKey !== undefined) {
-      this.idempotency.set(input.idempotencyKey, run.id);
+      this.rememberIdempotency(input.idempotencyKey, run.id);
     }
     return run;
+  }
+
+  /** Menyimpan idempotency key dengan TTL; membersihkan entri kedaluwarsa dan membatasi ukuran. */
+  private rememberIdempotency(key: string, runId: string): void {
+    const nowMs = this.now().getTime();
+    for (const [k, e] of this.idempotency) {
+      if (e.expiresAt <= nowMs) this.idempotency.delete(k);
+    }
+    while (this.idempotency.size >= MAX_IDEMPOTENCY_KEYS) {
+      const oldest = this.idempotency.keys().next();
+      if (oldest.done) break;
+      this.idempotency.delete(oldest.value);
+    }
+    this.idempotency.set(key, { runId, expiresAt: nowMs + IDEMPOTENCY_TTL_MS });
   }
 
   /**
